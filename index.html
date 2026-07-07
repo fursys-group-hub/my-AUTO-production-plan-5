@@ -1,0 +1,2954 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>생산계획 수립 도구</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f0f2f5;
+    --surface: #ffffff;
+    --surface2: #f8f9fb;
+    --border: #e2e6ea;
+    --border2: #cbd2d9;
+    --primary: #2563eb;
+    --primary-light: #eff6ff;
+    --primary-dark: #1d4ed8;
+    --accent: #059669;
+    --accent-light: #ecfdf5;
+    --warn: #dc2626;
+    --warn-light: #fef2f2;
+    --warn-bg: #fee2e2;
+    --yellow: #d97706;
+    --yellow-light: #fffbeb;
+    --text: #1e293b;
+    --text2: #475569;
+    --text3: #94a3b8;
+    --managed: #1d4ed8;
+    --managed-bg: #dbeafe;
+    --radius: 8px;
+    --radius-sm: 4px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.5; }
+
+  /* 탭 네비게이션 */
+  .nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: stretch; gap: 0; position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow); }
+  .nav-title { font-size: 14px; font-weight: 700; color: var(--primary); padding: 0 16px 0 0; display: flex; align-items: center; border-right: 1px solid var(--border); margin-right: 8px; white-space: nowrap; }
+  .tab { padding: 12px 16px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text2); font-size: 13px; font-weight: 500; transition: all 0.15s; white-space: nowrap; user-select: none; }
+  .tab:hover { color: var(--primary); background: var(--primary-light); }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+  .tab-badge { display: inline-block; background: var(--warn); color: white; border-radius: 10px; padding: 0 5px; font-size: 10px; margin-left: 4px; }
+
+  /* 페이지 */
+  .page { display: none; padding: 20px; max-width: 100%; }
+  .page.active { display: block; }
+
+  /* 업로드 섹션 */
+  .upload-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .upload-panel-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+  .upload-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .upload-item { display: flex; flex-direction: column; gap: 4px; }
+  .upload-label { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; }
+  .upload-input { display: none; }
+  .upload-btn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1.5px dashed var(--border2); border-radius: var(--radius-sm); cursor: pointer; color: var(--text2); font-size: 12px; transition: all 0.15s; background: var(--surface2); }
+  .upload-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+  .upload-btn.loaded { border-style: solid; border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+  .upload-btn .icon { font-size: 14px; }
+  .upload-filename { font-size: 11px; color: var(--text3); truncate: ellipsis; overflow: hidden; white-space: nowrap; }
+
+  /* 기준일 설정 */
+  .settings-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; box-shadow: var(--shadow); }
+  .settings-group { display: flex; align-items: center; gap: 8px; }
+  .settings-label { font-size: 12px; font-weight: 600; color: var(--text2); white-space: nowrap; }
+  .settings-input { padding: 6px 10px; border: 1px solid var(--border2); border-radius: var(--radius-sm); font-size: 12px; color: var(--text); background: var(--surface); }
+  .settings-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+  .date-chip { padding: 4px 10px; background: var(--primary-light); border: 1px solid #bfdbfe; border-radius: 20px; font-size: 11px; color: var(--primary); font-weight: 600; }
+  .date-chip.warn { background: var(--warn-light); border-color: #fecaca; color: var(--warn); }
+
+  /* 관리품목 */
+  .managed-bar { background: var(--managed-bg); border: 1px solid #93c5fd; border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .managed-bar-label { font-size: 11px; font-weight: 700; color: var(--managed); }
+  .managed-count { font-size: 11px; color: var(--managed); }
+
+  /* 필터/검색 바 */
+  .filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .search-input { padding: 6px 10px; border: 1px solid var(--border2); border-radius: var(--radius-sm); font-size: 12px; width: 200px; }
+  .search-input:focus { outline: none; border-color: var(--primary); }
+  .filter-btn { padding: 5px 12px; border: 1px solid var(--border2); border-radius: var(--radius-sm); background: var(--surface); font-size: 11px; cursor: pointer; color: var(--text2); transition: all 0.12s; }
+  .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .filter-btn.active { background: var(--primary); border-color: var(--primary); color: white; }
+  .toggle-btn { padding: 5px 12px; border: 1px solid var(--border2); border-radius: var(--radius-sm); background: var(--surface); font-size: 11px; cursor: pointer; color: var(--text2); transition: all 0.12s; }
+  .toggle-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* 액션 버튼 */
+  .btn { padding: 7px 16px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-success { background: var(--accent); color: white; }
+  .btn-success:hover { background: #047857; }
+  .btn-outline { background: var(--surface); color: var(--text2); border: 1px solid var(--border2); }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* 테이블 */
+  /* overflow:auto + max-height로 래퍼 자체를 스크롤 컨테이너로 만들어야 내부 th의 position:sticky가 실제로 상단에 고정됨 */
+  .table-wrap { overflow: auto; max-height: calc(100vh - 240px); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; background: var(--surface); font-size: 12px; }
+  th { background: #f1f5f9; padding: 8px 10px; text-align: center; font-weight: 600; color: var(--text2); border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; z-index: 10; font-size: 11px; }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: center; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8fafc; }
+
+  /* 셀 색상 */
+  td.neg { background: var(--warn-bg) !important; color: var(--warn); font-weight: 600; }
+  td.pos-green { background: #d1fae5 !important; color: #065f46; font-weight: 600; }
+  td.stock-updated { background: #d1fae5 !important; color: #065f46; font-weight: 600; }
+  td.managed-row { color: var(--managed); font-weight: 700; }
+  td.managed-code { color: var(--managed); font-weight: 700; }
+  td.name-col { text-align: left; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+  td.input-cell { padding: 2px 4px; }
+  td.input-cell input { width: 60px; padding: 4px 6px; border: 1px solid var(--border2); border-radius: 3px; text-align: right; font-size: 12px; }
+  td.input-cell input:focus { outline: none; border-color: var(--primary); background: var(--primary-light); }
+  /* 숫자 입력칸 증감 화살표(스피너) 제거 */
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { appearance: textfield; -moz-appearance: textfield; }
+  td.verified { background: #d1fae5 !important; }
+  td.not-verified { background: var(--warn-light) !important; }
+
+  /* 주간평균 셀: 목표생산량과 비교해 테두리 색 표시 (목표생산량이 많으면 연한 녹색, 적으면 연한 분홍색) */
+  td.week-avg-high { box-shadow: inset 0 0 0 2px #86efac; }
+  td.week-avg-low { box-shadow: inset 0 0 0 2px #f9a8d4; }
+
+  /* 2층 CAPA 초과: 메인 입력칸(저가 라인 일 200개, 고가 라인 일 40개 초과 시) 중 수량이 양수인 칸만 표시 */
+  /* 굵은 붉은 테두리는 저가/고가 공통, 채우기색만 라인별로 구분(저가=진한 주황, 고가=연한 붉은색) */
+  td.capa-over input { border: 2px solid var(--warn) !important; }
+  td.capa-over-high { background: var(--warn-bg) !important; }
+  td.capa-over-high input { background: var(--warn-bg) !important; }
+  td.capa-over-low { background: #ea580c !important; }
+  td.capa-over-low input { background: #ea580c !important; color: #fff; }
+
+  /* 2층 CAPA 모달 */
+  .capa-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+  .capa-modal { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-md); width: 680px; max-width: 92vw; max-height: 86vh; overflow: auto; padding: 20px 24px; }
+  .capa-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .capa-modal-title { font-size: 15px; font-weight: 700; color: var(--text); }
+  .capa-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .capa-table th, .capa-table td { border: 1px solid var(--border); padding: 9px 10px; text-align: center; }
+  .capa-table th { background: #f1f5f9; color: var(--text2); font-weight: 600; }
+  .capa-table td:first-child { text-align: left; font-weight: 600; color: var(--text); }
+  /* 저가 라인 초과: 연한 분홍색 / 고가 라인 초과: 연한 붉은색 */
+  .capa-table td.capa-low-over { background: #fce7f3 !important; color: #be185d; font-weight: 700; }
+  .capa-table td.capa-high-over { background: var(--warn-bg) !important; color: var(--warn); font-weight: 700; }
+
+  /* CAPA 매핑 관리 모달 */
+  .capa-admin-modal { width: 760px; }
+  .capa-admin-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .capa-admin-tab { padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; user-select: none; }
+  .capa-admin-tab:hover { color: var(--primary); }
+  .capa-admin-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .capa-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+  .capa-badge-default { background: #f1f5f9; color: var(--text2); }
+  .capa-badge-modified { background: #dbeafe; color: #1d4ed8; }
+  .capa-badge-added { background: #d1fae5; color: #065f46; }
+
+  /* 메인 표 틀고정: 1행(헤더) + 분류~주간평균 8개 열 (left 오프셋은 JS가 실제 폭 기준으로 동적 계산) */
+  /* table-layout:fixed + colgroup으로 모든 열 폭을 명시 → 품목명 열이 글자 내용과 무관하게 colgroup 폭까지 자유롭게 줄어듦 */
+  .freeze-table { table-layout: fixed; width: auto; }
+  .freeze-table th:nth-child(1), .freeze-table td:nth-child(1) { overflow:hidden; text-overflow:ellipsis; position: sticky; left: 0; }
+  .freeze-table th:nth-child(2), .freeze-table td:nth-child(2) { overflow:hidden; text-overflow:ellipsis; position: sticky; }
+  .freeze-table th:nth-child(3), .freeze-table td:nth-child(3) { overflow:hidden; text-overflow:ellipsis; position: sticky; }
+  .freeze-table th:nth-child(4), .freeze-table td:nth-child(4) { overflow:hidden; text-overflow:ellipsis; position: sticky; min-width: 0; }
+  .freeze-table th:nth-child(5), .freeze-table td:nth-child(5) { overflow:hidden; text-overflow:ellipsis; position: sticky; }
+  .freeze-table th:nth-child(6), .freeze-table td:nth-child(6) { overflow:hidden; text-overflow:ellipsis; position: sticky; }
+  .freeze-table th:nth-child(7), .freeze-table td:nth-child(7) { overflow:hidden; text-overflow:ellipsis; position: sticky; }
+  .freeze-table th:nth-child(8), .freeze-table td:nth-child(8) { overflow:hidden; text-overflow:ellipsis; position: sticky; }
+  .freeze-table td:nth-child(-n+8) { background: var(--surface); z-index: 6; }
+  .freeze-table thead th:nth-child(-n+8) { z-index: 16; }
+  .freeze-table tr:hover td:nth-child(-n+8) { background: #f8fafc; }
+  /* GRD 2열 글자 색상 있는 행 → 메인화면 회색 배경 표기 */
+  tr.grd-colored td { background: #cdd4e0 !important; }
+  tr.grd-colored:hover td { background: #bcc5d4 !important; }
+
+  /* 품목명 우측 진행상태(O/△) 선택칸: 글꼴은 표 전체와 동일하게 통일, 선택 시 셀 배경색 변경 + 검은 윤곽선 */
+  select.mark-select { width: 44px; padding: 3px 2px; border: 1px solid var(--border2); border-radius: 3px; font-size: 12px; font-weight: 400; text-align: center; background: var(--surface); cursor: pointer; color: var(--text); }
+  select.mark-select:focus { outline: none; border-color: var(--primary); }
+  select.mark-select.mark-o, select.mark-select.mark-tri { border: 1.5px solid #000; }
+  select.mark-select.mark-o { background: #dcfce7; }
+  select.mark-select.mark-tri { background: #ffedd5; }
+  td.mark-cell-o { background: #dcfce7 !important; }
+  td.mark-cell-tri { background: #ffedd5 !important; }
+
+  /* 품목명 열 드래그 리사이즈 핸들: 폭은 colgroup col-name이 결정 (전역 max-width:200px 제한 해제) */
+  /* .col-resizer는 위치 표시용 막대일 뿐, 실제 드래그 판정은 th 우측 10px 전체에서 동작(JS) */
+  .freeze-table th.name-col-header { user-select: none; position: sticky; }
+  .freeze-table td.name-col { max-width: none; min-width: 0; }
+  /* 텍스트를 별도 block 자식으로 감싸야 table-layout:fixed에서도 글자 길이와 무관하게 열이 줄어듦 */
+  .name-col-text { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .col-resizer { position: absolute; right: 0; top: 0; height: 100%; width: 8px; z-index: 5; pointer-events: none; background: rgba(148,163,184,0.4); border-radius: 0 2px 2px 0; }
+  .freeze-table th.name-col-header:hover .col-resizer { background: var(--primary); }
+
+  /* 섹션 헤더 */
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .section-title { font-size: 14px; font-weight: 700; color: var(--text); }
+  .section-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  /* 로딩 */
+  .loading { text-align: center; padding: 40px; color: var(--text3); }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text3); }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-state p { font-size: 13px; }
+  .empty-state .guide-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .empty-state .guide-box { display: inline-block; text-align: left; max-width: 480px; margin-top: 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 18px; }
+  .empty-state .guide-box ol { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.7; }
+  .empty-state .guide-box .guide-result { margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed var(--border2); font-size: 12px; line-height: 1.6; }
+
+  /* 알림 */
+  .alert { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .alert-info { background: var(--primary-light); border: 1px solid #bfdbfe; color: var(--primary); }
+  .alert-warn { background: var(--warn-light); border: 1px solid #fecaca; color: var(--warn); }
+  .alert-success { background: var(--accent-light); border: 1px solid #a7f3d0; color: var(--accent); }
+
+  /* 요일별 입력 컬럼 색상 */
+  .col-mon { background: #fefce8; }
+  .col-tue { background: #fef9f0; }
+  .col-wed { background: #f0fdf4; }
+  .col-thu { background: #f0f9ff; }
+  .col-fri { background: #fdf4ff; }
+
+  /* 엘라스틱·테롤 22 소요 품목의 기준일/기준일+1 생산계획 입력 칸 강조 */
+  td.date-hint input { background: #fde047 !important; border-color: #eab308; }
+
+  /* 생산계획 합계가 P/L단위의 배수가 아닐 때 경고 */
+  td.pl-mismatch { background: #475569 !important; color: #fff; font-weight: 700; }
+
+  /* 공휴일로 지정된 요일 입력 열: 진한 검은색 배경 + 붉은 테두리 (헤더 클릭으로 토글) */
+  th.day-header-holiday { background: #000 !important; color: #fff !important; border: 2px solid var(--warn) !important; cursor: pointer; }
+  td.holiday-col { background: #000 !important; border: 2px solid var(--warn) !important; }
+  td.holiday-col input { background: #000 !important; color: #fff !important; border-color: var(--warn) !important; }
+
+  /* 스핀너 */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--border2); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+
+  /* 블록 소요량 테이블 */
+  .block-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .block-section-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .block-type-badge { padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+  .badge-block { background: #fef3c7; color: #92400e; }
+  .badge-latex { background: #ede9fe; color: #5b21b6; }
+  .badge-terol { background: #d1fae5; color: #065f46; }
+  .badge-springblock { background: #ffedd5; color: #9a3412; }
+  .badge-springlatex { background: #dbeafe; color: #1e40af; }
+
+  /* 요약 카드 */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); }
+  .summary-card .val { font-size: 22px; font-weight: 700; color: var(--primary); }
+  .summary-card .lbl { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+  /* 포장라인 select */
+  select.line-select { padding: 3px 6px; border: 1px solid var(--border2); border-radius: 3px; font-size: 11px; background: var(--surface); cursor: pointer; }
+  select.line-select:focus { outline: none; border-color: var(--primary); }
+
+  /* 코드 셀 클릭 복사 */
+  td.code-cell { cursor: pointer; }
+  td.code-cell:hover { background: var(--primary-light) !important; }
+  .copy-toast { position: fixed; top: 20px; right: 20px; background: var(--accent); color: #fff; padding: 10px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; box-shadow: var(--shadow-md); z-index: 9999; opacity: 0; pointer-events: none; }
+  .copy-toast.show { animation: copyBlink 0.5s ease-in-out; }
+  @keyframes copyBlink { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+</style>
+</head>
+<body>
+
+<div class="copy-toast" id="copy-toast">✅ 복사완료</div>
+
+<!-- 2층 CAPA 모달 -->
+<div id="capa-modal-overlay" class="capa-modal-overlay" style="display:none;" onclick="if(event.target===this) closeCapaModal()">
+  <div class="capa-modal">
+    <div class="capa-modal-header">
+      <div class="capa-modal-title">🏗️ 2층 CAPA (스프링 매트리스)</div>
+      <button class="btn btn-outline" onclick="closeCapaModal()">✕ 닫기</button>
+    </div>
+    <div id="capa-modal-body"></div>
+  </div>
+</div>
+
+<!-- 4층 CAPA 모달 -->
+<div id="capa4-modal-overlay" class="capa-modal-overlay" style="display:none;" onclick="if(event.target===this) closeCapa4Modal()">
+  <div class="capa-modal">
+    <div class="capa-modal-header">
+      <div class="capa-modal-title">🏗️ 4층 CAPA (모션/매트리스/토퍼)</div>
+      <button class="btn btn-outline" onclick="closeCapa4Modal()">✕ 닫기</button>
+    </div>
+    <div id="capa4-modal-body"></div>
+  </div>
+</div>
+
+<!-- CAPA 매핑 관리 모달 -->
+<div id="capa-admin-modal-overlay" class="capa-modal-overlay" style="display:none;" onclick="if(event.target===this) closeCapaAdminModal()">
+  <div class="capa-modal capa-admin-modal">
+    <div class="capa-modal-header">
+      <div class="capa-modal-title">⚙️ CAPA 매핑 관리</div>
+      <button class="btn btn-outline" onclick="closeCapaAdminModal()">✕ 닫기</button>
+    </div>
+    <div class="capa-admin-tabs">
+      <div class="capa-admin-tab active" data-group="floor2" onclick="switchCapaAdminTab('floor2')">2층 (저가/고가)</div>
+      <div class="capa-admin-tab" data-group="floor4" onclick="switchCapaAdminTab('floor4')">4층 (모션/매트리스/토퍼)</div>
+      <div class="capa-admin-tab" data-group="glue" onclick="switchCapaAdminTab('glue')">4층 접착품목</div>
+    </div>
+    <div id="capa-admin-body"></div>
+  </div>
+</div>
+
+<!-- 네비게이션 -->
+<nav class="nav">
+  <div class="nav-title">📋 생산계획</div>
+  <div class="tab active" onclick="switchTab('main')">⚙️ 생산계획 입력</div>
+  <div class="tab" onclick="switchTab('block')">🧱 블록 소요량</div>
+  <div class="tab" onclick="switchTab('order')">📦 일일 수주량</div>
+  <div class="tab" onclick="switchTab('stock')">🏭 일일 재고량</div>
+  <div class="tab" onclick="switchTab('scm')">🎪 행사량 매핑</div>
+</nav>
+
+<!-- ===================== 메인: 생산계획 입력 ===================== -->
+<div id="page-main" class="page active">
+
+  <!-- 파일 업로드 -->
+  <div class="upload-panel">
+    <div class="upload-panel-title">📂 데이터 파일 업로드</div>
+    <div class="upload-grid">
+      <div class="upload-item">
+        <div class="upload-label">재고 현황 (grd_list)</div>
+        <label class="upload-btn" id="btn-grd" onclick="document.getElementById('input-grd').click()">
+          <span class="icon">📊</span> <span id="name-grd">파일 선택...</span>
+        </label>
+        <input type="file" id="input-grd" accept=".xls,.xlsx" onchange="loadGrd(this)">
+      </div>
+      <div class="upload-item">
+        <div class="upload-label">수주량 (일_수주량)</div>
+        <label class="upload-btn" id="btn-order" onclick="document.getElementById('input-order').click()">
+          <span class="icon">📈</span> <span id="name-order">파일 선택...</span>
+        </label>
+        <input type="file" id="input-order" accept=".xls,.xlsx" onchange="loadOrder(this)">
+      </div>
+      <div class="upload-item">
+        <div class="upload-label">관리 품목 코드 (txt)</div>
+        <label class="upload-btn" id="btn-codes" onclick="document.getElementById('input-codes').click()">
+          <span class="icon">📝</span> <span id="name-codes">파일 선택...</span>
+        </label>
+        <input type="file" id="input-codes" accept=".txt" onchange="loadCodes(this)">
+      </div>
+      <div class="upload-item">
+        <div class="upload-label">계획 복원 (작성용 파일)</div>
+        <label class="upload-btn" id="btn-restore" onclick="document.getElementById('input-restore').click()" style="border-color:#a78bfa; color:#7c3aed;">
+          <span class="icon">🔄</span> <span id="name-restore">작성용 파일 선택...</span>
+        </label>
+        <input type="file" id="input-restore" accept=".xlsx" style="display:none" onchange="loadRestoreFile(this)">
+        <div class="upload-filename" style="color:#7c3aed; font-size:10px;">⬇️ 작성용 파일로 전체 복원</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 기준일 설정 -->
+  <div class="settings-bar">
+    <div class="settings-group">
+      <div class="settings-label">📅 생산 기준일</div>
+      <input type="date" class="settings-input" id="base-date" onchange="onBaseDateChange()">
+      <span class="settings-label">주차</span>
+      <input type="text" class="settings-input" id="week-label" placeholder="예: 6월 3주차" style="width:100px">
+    </div>
+    <div class="settings-group" id="date-chips" style="display:none; gap:6px; flex-wrap:wrap;">
+      <div class="settings-label">자동 세팅 →</div>
+      <span class="date-chip" id="chip-prev">기준전일: -</span>
+      <span class="date-chip" id="chip-8">전주비교: -</span>
+      <span class="date-chip" id="chip-week">주간: 월~금</span>
+    </div>
+    <div style="margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <span id="save-indicator" style="font-size:11px; color:var(--text3); white-space:nowrap;"></span>
+      <button class="btn btn-outline" onclick="clearManualInputs()" style="font-size:11px; padding:5px 10px; color:var(--warn); border-color:#fecaca;">🧹 입력 내용 초기화</button>
+      <button class="btn btn-outline" onclick="clearSavedPlan()" style="font-size:11px; padding:5px 10px;">🗑️ 저장 초기화</button>
+      <button class="btn btn-primary" onclick="buildMainTable()">🔄 계획표 생성</button>
+      <button class="btn btn-outline" onclick="openCapaModal()">🏗️ 2층 CAPA</button>
+      <button class="btn btn-outline" onclick="openCapa4Modal()">🏗️ 4층 CAPA</button>
+      <button class="btn btn-outline" onclick="openCapaAdminModal()">⚙️ CAPA 매핑 관리</button>
+      <button class="btn btn-success" onclick="downloadPlanFile()">⬇️ 작성용 파일</button>
+      <button class="btn btn-success" onclick="downloadErpFile()">⬇️ ERP 투입 파일</button>
+    </div>
+  </div>
+
+  <!-- 관리품목 표시 -->
+  <div class="managed-bar" id="managed-bar" style="display:none;">
+    <span class="managed-bar-label">🔵 관리 품목</span>
+    <span class="managed-count" id="managed-count">0개 로드됨</span>
+    <span style="color:#93c5fd; font-size:11px;">| txt 파일로 추가/제거 가능</span>
+  </div>
+
+  <!-- 필터/검색 -->
+  <div class="filter-bar" id="main-filter-bar" style="display:none;">
+    <input type="text" class="search-input" id="main-search" placeholder="🔍 품목코드 / 품목명 검색" oninput="filterMainTable()">
+    <button class="filter-btn active" id="filter-all" onclick="clearFilters()">전체</button>
+    <button class="filter-btn" id="filter-managed" onclick="toggleFilter('managed')">관리품목만</button>
+    <button class="filter-btn" id="filter-neg" onclick="toggleFilter('neg')">재고부족</button>
+    <button class="toggle-btn" onclick="toggleNameCol()" id="toggle-name-btn">품목명 숨기기</button>
+    <span id="row-count" style="font-size:11px; color:var(--text3); margin-left:4px;"></span>
+  </div>
+
+  <!-- 메인 테이블 -->
+  <div id="main-content">
+    <div class="empty-state">
+      <div class="icon">📂</div>
+      <p class="guide-title">생산계획 입력 화면</p>
+      <p>수주량·재고현황 데이터를 합쳐 주간 생산계획표를 만드는 메인 화면입니다.</p>
+      <div class="guide-box">
+        <ol>
+          <li>재고 현황(grd_list), 수주량(일_수주량) 파일을 업로드합니다. (관리 품목 코드 txt는 선택)</li>
+          <li>생산 기준일과 주차를 설정합니다.</li>
+          <li><strong>계획표 생성</strong>을 클릭합니다.</li>
+        </ol>
+        <p class="guide-result">→ 품목별 재고/입출고 예량, 행사 FCST, 요일별(월~금) 목표생산량을 확인·수정하고, <strong>작성용 파일 / ERP 투입 파일</strong>로 다운로드할 수 있습니다.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 블록 소요량 ===================== -->
+<div id="page-block" class="page">
+  <div class="section-header">
+    <div>
+      <div class="section-title">🧱 블록 소요량</div>
+      <div class="section-sub">생산계획표 입력 후 <strong>업데이트</strong> 버튼을 눌러 최신 계획수량으로 다시 계산합니다.</div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-primary" onclick="updateBlockCalc()">🔄 업데이트</button>
+      <button class="btn btn-outline" onclick="addBlockItem()">+ 항목 추가</button>
+      <button class="btn btn-success" onclick="downloadBlockTable()">⬇️ 블록 현황 다운로드</button>
+    </div>
+  </div>
+  <div id="block-content">
+    <div class="empty-state">
+      <div class="icon">🧱</div>
+      <p class="guide-title">블록 소요량 화면</p>
+      <p>생산계획 입력 화면의 목표생산량을 기준으로 블록 자재 필요 수량을 계산합니다.</p>
+      <div class="guide-box">
+        <ol>
+          <li>생산계획 입력 화면에서 계획표를 먼저 생성·입력합니다.</li>
+          <li>이 화면에서 <strong>업데이트</strong> 버튼을 클릭합니다.</li>
+        </ol>
+        <p class="guide-result">→ 레코텍 / 엘라스틱 / 테롤 22 / 스프링 레코텍 / 스프링 엘라스틱 자재별로 사이즈(S/SS/Q/K/KK)별 소요량이 자동 계산되며, 엑셀로 다운로드할 수 있습니다.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 일일 수주량 ===================== -->
+<div id="page-order" class="page">
+  <div class="section-header">
+    <div>
+      <div class="section-title">📦 일일 수주량</div>
+      <div class="section-sub">수주량 파일 기준 품목별 수주 현황</div>
+    </div>
+  </div>
+  <div class="filter-bar">
+    <input type="text" class="search-input" id="order-search" placeholder="🔍 품목코드 / 품목명 검색" oninput="filterOrderTable()">
+    <button class="filter-btn active" id="order-filter-all" onclick="clearOrderFilters()">전체</button>
+    <button class="filter-btn" id="order-filter-managed" onclick="toggleOrderFilter('managed')">관리품목만</button>
+    <button class="filter-btn" id="order-filter-neg" onclick="toggleOrderFilter('neg')">재고부족</button>
+    <button class="toggle-btn" onclick="toggleOrderNameCol()" id="toggle-order-name">품목명 숨기기</button>
+  </div>
+  <div id="order-content">
+    <div class="empty-state">
+      <div class="icon">📦</div>
+      <p class="guide-title">일일 수주량 화면</p>
+      <p>업로드한 수주량(일_수주량) 파일의 원본 데이터를 품목별·날짜별로 조회하는 화면입니다.</p>
+      <div class="guide-box">
+        <ol>
+          <li>생산계획 입력 화면에서 수주량 파일을 업로드합니다. (이 화면과 자동으로 연동됩니다)</li>
+        </ol>
+        <p class="guide-result">→ 품목코드/품목명 검색, 관리품목·재고부족 필터로 수주 현황을 빠르게 확인할 수 있습니다.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 일일 재고량 ===================== -->
+<div id="page-stock" class="page">
+  <div class="section-header">
+    <div>
+      <div class="section-title">🏭 일일 재고량</div>
+      <div class="section-sub">grd_list 기준 품목별 일별 예량</div>
+    </div>
+  </div>
+  <div class="filter-bar">
+    <input type="text" class="search-input" id="stock-search" placeholder="🔍 품목코드 / 품목명 검색" oninput="filterStockTable()">
+    <button class="filter-btn active" id="stock-filter-all" onclick="clearStockFilters()">전체</button>
+    <button class="filter-btn" id="stock-filter-managed" onclick="toggleStockFilter('managed')">관리품목만</button>
+    <button class="filter-btn" id="stock-filter-neg" onclick="toggleStockFilter('neg')">재고부족</button>
+    <button class="toggle-btn" onclick="toggleStockNameCol()" id="toggle-stock-name">품목명 숨기기</button>
+    <button class="btn btn-primary" onclick="updateStockWithPlan()">🔄 생산계획 반영 업데이트</button>
+  </div>
+  <div id="stock-content">
+    <div class="empty-state">
+      <div class="icon">🏭</div>
+      <p class="guide-title">일일 재고량 화면</p>
+      <p>grd_list 파일 기준 품목별 일자별 예상 재고(입고예량/출고예량 반영)를 조회하는 화면입니다.</p>
+      <div class="guide-box">
+        <ol>
+          <li>생산계획 입력 화면에서 grd_list 파일을 업로드합니다. (이 화면과 자동으로 연동됩니다)</li>
+        </ol>
+        <p class="guide-result">→ <strong>생산계획 반영 업데이트</strong>를 누르면 생산계획 입력 화면에서 작성한 목표생산량이 일자별 재고에 반영되어 갱신됩니다.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 행사량 매핑 ===================== -->
+<div id="page-scm" class="page">
+  <div class="section-header">
+    <div>
+      <div class="section-title">🎪 행사량 매핑</div>
+      <div class="section-sub">SCM 행사 점검 파일은 매번 열 구성이 달라 자동 인식이 불안정합니다. 파일을 올린 뒤 코드열/색상열/포함할 수량열을 직접 체크해서 적용하세요.</div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <label class="upload-btn" id="btn-scm-raw" onclick="document.getElementById('input-scm-raw').click()">
+        <span class="icon">🎪</span> <span id="name-scm-raw">파일 선택...</span>
+      </label>
+      <input type="file" id="input-scm-raw" accept=".xls,.xlsx" style="display:none" onchange="loadScmRaw(this)">
+    </div>
+  </div>
+  <div id="scm-mapping-content">
+    <div class="empty-state">
+      <div class="icon">🎪</div>
+      <p class="guide-title">행사량 매핑 화면</p>
+      <p>SCM 행사 점검 파일은 주차마다 열 구성이 달라 자동 인식이 불안정해, 직접 열을 체크해 매핑합니다.</p>
+      <div class="guide-box">
+        <ol>
+          <li>SCM 행사 점검 파일을 업로드합니다.</li>
+          <li>미리보기 표에서 코드열 / 색상열(선택) / 합산할 수량열을 체크합니다.</li>
+          <li><strong>매핑 적용</strong>을 클릭합니다.</li>
+        </ol>
+        <p class="guide-result">→ 생산계획 입력 화면의 <strong>행사 FCST</strong> 열이 수기 입력칸에서 코드(+색상)별 합산값 표시로 바뀌어 자동 반영됩니다.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 전역 상태 =====
+const state = {
+  grdData: null,       // grd_list 파싱 결과
+  orderData: null,     // 수주량 파싱 결과
+  scmData: null,       // 행사량 매핑 적용 결과 { itemMap(code_색상별), codeMap(코드별) }
+  scmRaw: null,        // 행사 점검 파일 원본 행렬(매핑 화면용)
+  managedCodes: [],    // 관리 품목 코드 목록
+  holidayDates: new Set(), // 수기 지정 휴일(임시공휴일 등, YYYY-MM-DD) - 헤더 클릭으로 토글, 자동인식(고정 공휴일 계산 + LUNAR_HOLIDAYS)에 없는 날짜 추가용
+  baseDate: null,      // 기준일 (Date)
+  planRows: [],        // 메인 계획표 행 데이터
+  blockRows: [],       // 블록 소요량 행 데이터
+  stockUpdated: false, // 일일 재고량에 생산계획 입력수량 반영 여부
+  showName: true,      // 품목명 열 표시 여부
+  nameColWidth: 180,   // 품목명 열 가로 폭(px) - 사용자 드래그로 조절
+  showOrderName: true,
+  showStockName: true,
+  filterModes: new Set(), // 복수 선택 가능한 필터(예: 'managed','neg') - 비어있으면 전체
+  orderFilterModes: new Set(), // 일일 수주량 탭 필터
+  stockFilterModes: new Set(), // 일일 재고량 탭 필터
+  LINE_CODES: {
+    '100000': '포장1(스프링)',
+    '100001': '판조립 반제품',
+    '18000T': '포장1',
+    '900003': '모션 포장2',
+    '900000': '외주협력업체',
+    '900004': '포장3',
+    '900005': '퀼팅라인',
+    '900006': '발포라인',
+  }
+};
+
+// ===== 대한민국 공휴일 자동 인식 (대체공휴일 포함) =====
+// 고정 국경일/기념일(신정·삼일절·어린이날·현충일·제헌절·광복절·개천절·한글날·성탄절)은 매년 요일 기반으로
+// 자동 계산되며 대체공휴일 규정(주말과 겹치면 다음 첫 평일로 이월)까지 반영되어 별도 갱신이 필요 없다.
+// 다만 설날·추석·부처님오신날은 음력 기반이라 알고리즘으로 계산할 수 없다 - 한국 음력은 KST 자정 기준인데
+// 공개된 음력 변환표는 대부분 중국 농력(CST 기준)이라 신월 시각이 자정 부근인 해에는 하루 오차가 발생할 수 있음
+// (예: 2027년 설날 - 중국 농력 기준 계산은 2/6이지만 한국 실제 설날은 2/7). 따라서 음력 3대 명절은 아래
+// LUNAR_HOLIDAYS 표에 실제 관보/공신력 있는 자료로 확인한 날짜만 수기로 추가한다(2025~2027 확정치로 검증됨).
+// → 매년 이 표에 다음 해 설날·추석·부처님오신날(+대체공휴일)만 3~4줄 추가하면 됨.
+const LUNAR_HOLIDAYS = new Set([
+  // 2025
+  '2025-01-27',                                   // 임시공휴일(설 연휴 브릿지)
+  '2025-01-28','2025-01-29','2025-01-30',         // 설날 연휴
+  '2025-05-06',                                   // 어린이날·부처님오신날(5/5) 중복에 따른 대체공휴일
+  '2025-10-05','2025-10-06','2025-10-07','2025-10-08', // 추석 연휴 + 대체공휴일
+
+  // 2026
+  '2026-02-16','2026-02-17','2026-02-18',         // 설날 연휴
+  '2026-05-24','2026-05-25',                      // 부처님오신날 + 대체공휴일
+  '2026-09-24','2026-09-25','2026-09-26',         // 추석 연휴
+
+  // 2027 (정부 확정 전 잠정치)
+  '2027-02-06','2027-02-07','2027-02-08','2027-02-09', // 설날 연휴 + 대체공휴일
+  '2027-05-13',                                   // 부처님오신날
+  '2027-09-14','2027-09-15','2027-09-16',         // 추석 연휴
+]);
+
+// 고정 국경일/기념일: { month, day, substitute(대체공휴일 대상 여부), sinceYear(시행 연도, 없으면 전체) }
+const FIXED_HOLIDAYS = [
+  { m: 1,  d: 1,  substitute: false },                    // 신정 (대체공휴일 대상 아님)
+  { m: 3,  d: 1,  substitute: true  },                    // 삼일절
+  { m: 5,  d: 5,  substitute: true  },                    // 어린이날
+  { m: 6,  d: 6,  substitute: false },                    // 현충일 (대체공휴일 대상 아님)
+  { m: 7,  d: 17, substitute: true, sinceYear: 2026 },    // 제헌절 (2026년 관보 개정으로 18년 만에 부활)
+  { m: 8,  d: 15, substitute: true  },                    // 광복절
+  { m: 10, d: 3,  substitute: true  },                    // 개천절
+  { m: 10, d: 9,  substitute: true  },                    // 한글날
+  { m: 12, d: 25, substitute: true  },                    // 성탄절
+];
+
+function fmtDateYMD(y, m, d) {
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+// 해당 연도의 고정 공휴일 + 대체공휴일(주말과 겹치면 다음 첫 평일로 이월)을 계산 - 연도 무관 영구 로직
+function computeFixedHolidays(year) {
+  const set = new Set();
+  FIXED_HOLIDAYS.forEach(h => {
+    if (h.sinceYear && year < h.sinceYear) return;
+    set.add(fmtDateYMD(year, h.m, h.d));
+  });
+  FIXED_HOLIDAYS.forEach(h => {
+    if (h.sinceYear && year < h.sinceYear) return;
+    if (!h.substitute) return;
+    const d = new Date(year, h.m - 1, h.d);
+    if (d.getDay() !== 0 && d.getDay() !== 6) return; // 주말과 겹치지 않으면 대체공휴일 없음
+    const cur = new Date(d);
+    let ds;
+    do {
+      cur.setDate(cur.getDate() + 1);
+      ds = fmtDateYMD(cur.getFullYear(), cur.getMonth() + 1, cur.getDate());
+    } while (cur.getDay() === 0 || cur.getDay() === 6 || set.has(ds));
+    set.add(ds);
+  });
+  return set;
+}
+
+const _fixedHolidayCache = new Map();
+function isAutoHoliday(dateStr) {
+  if (LUNAR_HOLIDAYS.has(dateStr)) return true;
+  const year = Number(dateStr.slice(0, 4));
+  if (!_fixedHolidayCache.has(year)) _fixedHolidayCache.set(year, computeFixedHolidays(year));
+  return _fixedHolidayCache.get(year).has(dateStr);
+}
+
+// 공휴일 자동 인식(고정 계산 + 음력 표) 또는 수기 지정(state.holidayDates) 여부
+function isHolidayDate(dateStr) {
+  return isAutoHoliday(dateStr) || state.holidayDates.has(dateStr);
+}
+
+// ===== 코드 셀 클릭 복사 =====
+function copyCodeCell(text) {
+  const done = () => showCopyToast();
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  done();
+}
+
+function showCopyToast() {
+  const toast = document.getElementById('copy-toast');
+  toast.classList.remove('show');
+  void toast.offsetWidth; // 애니메이션 재시작을 위한 리플로우 강제
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 500);
+}
+
+// ===== 탭 전환 =====
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('page-' + tab).classList.add('active');
+}
+
+// ===== 기준일 변경 =====
+function onBaseDateChange() {
+  const val = document.getElementById('base-date').value;
+  if (!val) return;
+  state.baseDate = new Date(val);
+  const bd = state.baseDate;
+
+  // 기준전일 = 기준일 -1
+  const prev = new Date(bd); prev.setDate(prev.getDate() - 1);
+  // 비교일 = 기준전일 -7 (전주 동일요일)
+  const prev8 = new Date(prev); prev8.setDate(prev8.getDate() - 7);
+  // 요일 계산 (기준일이 월요일이면 월~금)
+  const mon = new Date(bd);
+  const tue = new Date(bd); tue.setDate(tue.getDate() + 1);
+  const wed = new Date(bd); wed.setDate(wed.getDate() + 2);
+  const thu = new Date(bd); thu.setDate(thu.getDate() + 3);
+  const fri = new Date(bd); fri.setDate(fri.getDate() + 4);
+
+  const fmt = d => `${d.getMonth()+1}/${d.getDate()}`;
+  document.getElementById('chip-prev').textContent = `기준전일: ${fmt(prev)}`;
+  document.getElementById('chip-8').textContent = `전주비교: ${fmt(prev8)}`;
+  document.getElementById('chip-week').textContent = `주간: ${fmt(mon)}(월)~${fmt(fri)}(금)`;
+  document.getElementById('date-chips').style.display = 'flex';
+
+  // 주차 자동 제안
+  if (!document.getElementById('week-label').value) {
+    const m = bd.getMonth() + 1;
+    const w = Math.ceil(bd.getDate() / 7);
+    document.getElementById('week-label').value = `${m}월 ${w}주차`;
+  }
+
+  renderOrderTable();
+}
+
+// ===== GRD 파일 파싱 =====
+function loadGrd(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true, cellStyles: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+
+      // B열 폰트 색상이 기본색(검정/다크차콜)이 아닌 행 → grdColored 표시용
+      // XLS 파일에서 XLSX.js는 색상을 rgb 또는 index로 반환 (둘 다 처리)
+      const grdColoredKeys = new Set();
+      const refRange = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let r = refRange.s.r + 1; r <= refRange.e.r; r++) {
+        const codeCell = ws[XLSX.utils.encode_cell({ r, c: 1 })];
+        const colorCell = ws[XLSX.utils.encode_cell({ r, c: 2 })];
+        if (!codeCell || !codeCell.v) continue;
+        const code = String(codeCell.v || '').trim();
+        const color = String(colorCell?.v || '').trim();
+        if (!code || code === '품목코드' || code === 'Total') continue;
+
+        let isColored = false;
+        const fc = codeCell.s?.font?.color;
+        if (fc) {
+          const rgb = (fc.rgb || '').replace(/^[Ff]{2}/, '').toUpperCase();
+          const cidx = fc.index ?? fc.idx;
+          if (rgb) {
+            // RGB 직접 비교: 검정(000000) 또는 이 파일의 기본 다크차콜(3F3E3E)은 제외
+            isColored = rgb !== '000000' && rgb !== '3F3E3E';
+          } else if (cidx !== undefined && cidx !== null) {
+            // 인덱스 팔레트: 0=자동, 1=검정, 8=검정 → 제외
+            isColored = cidx !== 0 && cidx !== 1 && cidx !== 8;
+          }
+        }
+        // fallback: XLSX.js 스타일 미지원 시 사용여부로 추론
+        // (이 파일에서 파란 글자 = 사용여부가 '사용'이 아닌 항목과 1:1 대응)
+        if (!isColored) {
+          const useYnCell = ws[XLSX.utils.encode_cell({ r, c: 189 })];
+          const useYnVal = String(useYnCell?.v || '').trim();
+          if (useYnVal && useYnVal !== '사용') isColored = true;
+        }
+        if (isColored) grdColoredKeys.add(`${code}_${color}`);
+      }
+
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      state.grdData = parseGrd(raw);
+      state.grdData.coloredKeys = grdColoredKeys;
+      setUploaded('btn-grd', 'name-grd', file.name);
+      if (state.grdData) renderStockTable();
+      renderOrderTable();
+      console.log('GRD 파싱 완료:', Object.keys(state.grdData.items).length, '품목 | 색상강조:', grdColoredKeys.size, '개');
+    } catch(err) { alert('GRD 파일 파싱 오류: ' + err.message); }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function parseGrd(raw) {
+  const row0 = raw[0] || [];
+
+  // 날짜→열 인덱스 매핑 (1행, 병합셀 처리: 날짜는 각 그룹 첫 열에만 있음)
+  // 5열 간격: 출예(+0), 물입예(+1), 계획(+2), 예량(+3), 기타(+4)
+  const dateColMap = {};   // 'YYYY-MM-DD' -> 출예 열 인덱스
+  const mulipColMap = {};  // 'YYYY-MM-DD' -> 물입예 열 인덱스
+  const yeColMap = {};     // 'YYYY-MM-DD' -> 예량 열 인덱스
+  const dateOrder = [];    // 날짜 순서 보존
+
+  let currentDate = null;
+  for (let j = 0; j < row0.length; j++) {
+    const v = row0[j];
+    let dateStr = null;
+
+    if (v instanceof Date) {
+      dateStr = fmtDate(v);
+    } else if (typeof v === 'number' && v > 40000) {
+      const d = XLSX.SSF.parse_date_code(v);
+      if (d) dateStr = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    } else if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      dateStr = v;
+    }
+
+    if (dateStr) {
+      currentDate = dateStr;
+      if (!dateColMap[currentDate]) {
+        dateColMap[currentDate] = j;
+        mulipColMap[currentDate] = j + 1;  // offset +1
+        yeColMap[currentDate] = j + 3;     // offset +3
+        dateOrder.push(currentDate);
+      }
+    }
+  }
+
+  // "3개월평균매출" 열 위치 탐색 (후반 열, 줄바꿈 포함될 수 있음)
+  let avg3mCol = -1;
+  for (let j = 0; j < row0.length; j++) {
+    const t = String(row0[j] || '').replace(/\s+/g, '');
+    if (t === '3개월평균매출') { avg3mCol = j; break; }
+  }
+
+  // "포장라인" 열 위치 탐색 (헤더 텍스트로 동적 탐색, 줄바꿈 포함될 수 있음)
+  let lineCol = -1;
+  for (let j = 0; j < row0.length; j++) {
+    const t = String(row0[j] || '').replace(/\s+/g, '');
+    if (t === '포장라인') { lineCol = j; break; }
+  }
+
+  // 품목 데이터 파싱 (3행부터)
+  const items = {};
+  for (let i = 2; i < raw.length; i++) {
+    const row = raw[i] || [];
+    const code = String(row[1] || '').trim();
+    const color = String(row[2] || '').trim();
+    if (!code || code === '품목코드') continue;
+
+    const key = `${code}_${color}`;
+    const nameRaw = String(row[3] || '').trim();
+    const name = (nameRaw && isNaN(Number(nameRaw))) ? nameRaw : '';
+    const stockType = String(row[4] || '').trim();
+    const useYn = String(row[189] || '').trim();  // 190번째 열 (사용여부)
+    // 투입후재고는 텍스트로 들어올 수 있음(예: "-14") → parseNum(parseFloat 기반)으로 변환해야 음수 판별이 정확함
+    const postInputStock = parseNum(row[5]);
+    const curStock = parseNum(row[6]);
+    const avg3m = avg3mCol >= 0 ? parseNum(row[avg3mCol]) : 0;
+    const lineRaw = lineCol >= 0 ? String(row[lineCol] || '').trim() : '';
+
+    const stockByDate = {};
+    const mulipByDate = {};
+    const chuyeByDate = {};
+    for (const date of dateOrder) {
+      stockByDate[date] = parseNum(row[yeColMap[date]]);
+      mulipByDate[date] = parseNum(row[mulipColMap[date]]);
+      chuyeByDate[date] = parseNum(row[dateColMap[date]]);
+    }
+
+    items[key] = { code, color, name, curStock, postInputStock, stockType, useYn, avg3m, lineRaw, stockByDate, mulipByDate, chuyeByDate };
+  }
+
+  return { items, dateColMap, yeColMap, mulipColMap, dates: dateOrder };
+}
+
+// grd "포장라인" 원본 텍스트 → state.LINE_CODES 키 매칭
+// grd 표기가 공식 라인명과 글자 그대로 일치하지 않는 경우(예: "포장2(모션)" vs "모션 포장2")가 있어
+// 키워드 포함 여부로 판별. "포장1(폼)"처럼 별도 라인명이 없는 표기는 일반 포장1(18000T)로 처리.
+function matchLineCode(lineRaw) {
+  const t = String(lineRaw || '');
+  if (!t) return '18000T';
+  if (t.includes('스프링')) return '100000';
+  if (t.includes('판조립')) return '100001';
+  if (t.includes('모션')) return '900003';
+  if (t.includes('외주')) return '900000';
+  if (t.includes('퀼팅')) return '900005';
+  if (t.includes('발포')) return '900006';
+  if (t.includes('포장3')) return '900004';
+  if (t.includes('포장1')) return '18000T';
+  return '18000T';
+}
+
+// ===== 수주량 파일 파싱 =====
+function loadOrder(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      state.orderData = parseOrder(raw);
+      setUploaded('btn-order', 'name-order', file.name);
+      renderOrderTable();
+      console.log('수주량 파싱 완료:', state.orderData.items.length, '품목');
+    } catch(err) { alert('수주량 파일 파싱 오류: ' + err.message); }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function parseOrder(raw) {
+  const row0 = raw[0] || [];
+  const row2 = raw[2] || [];
+  const row3 = raw[3] || [];
+  const dateCols = [];
+  const weekdays = ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'];
+
+  let currentMonth = null;
+  for (let j = 0; j < row0.length; j++) {
+    const monthLabel = String(row0[j] || '').trim();
+    const monthMatch = monthLabel.match(/(\d{1,2})월/);
+    if (monthMatch) {
+      currentMonth = parseInt(monthMatch[1], 10);
+    }
+    const dayRaw = String(row2[j] || '').trim();
+    const weekday = String(row3[j] || '').trim();
+    if (currentMonth && dayRaw && /^\d+$/.test(dayRaw) && weekdays.includes(weekday)) {
+      const day = parseInt(dayRaw, 10);
+      const year = state.baseDate ? state.baseDate.getFullYear() : new Date().getFullYear();
+      const dateStr = `${year}-${String(currentMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      dateCols.push({ col: j, date: dateStr, weekday });
+    }
+  }
+
+  // "총합계" 열 위치 탐색 (가장 마지막 열, 1행 기준) → 주간평균 = 총합계 / 12
+  let grandTotalCol = -1;
+  for (let j = 0; j < row0.length; j++) {
+    if (String(row0[j] || '').trim() === '총합계') { grandTotalCol = j; }
+  }
+
+  const items = [];
+  for (let i = 4; i < raw.length; i++) {
+    const row = raw[i] || [];
+    const code = String(row[1] || '').trim();
+    const color = String(row[2] || '').trim();
+    if (!code) continue;
+
+    const key = `${code}_${color}`;
+    const category = String(row[0] || '').trim();
+    const name = '';
+    const orderByDate = {};
+    let orderTotal = 0;
+
+    dateCols.forEach(dc => {
+      const qty = parseNum(row[dc.col]);
+      orderByDate[dc.date] = qty;
+      orderTotal += qty;
+    });
+
+    const grandTotal = grandTotalCol >= 0 ? parseNum(row[grandTotalCol]) : 0;
+    const weekAvg = grandTotal / 12;
+
+    items.push({ key, code, color, category, name, orderByDate, orderTotal, grandTotal, weekAvg });
+  }
+
+  return { items, dateCols };
+}
+
+// ===== 행사량 매핑(수동) =====
+// SCM 행사 점검 파일은 주차마다 열 구성이 달라 고정 인덱스로 자동 인식이 불안정함
+// → 원본 그대로 올린 뒤 사용자가 코드열/색상열/포함할 수량열을 직접 체크해서 매핑
+function loadScmRaw(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
+      const ws = wb.Sheets['summary'] || wb.Sheets[wb.SheetNames[0]];
+      state.scmRaw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      setUploaded('btn-scm-raw', 'name-scm-raw', file.name);
+      renderScmMappingTable();
+    } catch(err) { alert('행사 점검 파일 읽기 오류: ' + err.message); }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function colLetter(idx) {
+  let s = '', n = idx;
+  do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return s;
+}
+
+function renderScmMappingTable() {
+  const raw = state.scmRaw;
+  if (!raw || !raw.length) return;
+  const maxCols = raw.reduce((m, r) => Math.max(m, r.length), 0);
+  const previewRows = raw.slice(0, 15);
+
+  let html = `
+    <div class="settings-bar" style="margin-bottom:12px;">
+      <div class="settings-group">
+        <div class="settings-label">데이터 시작 행</div>
+        <input type="number" min="1" value="2" id="scm-start-row" class="settings-input" style="width:70px">
+        <span style="font-size:11px; color:var(--text3);">(미리보기에서 실제 데이터가 시작하는 행 번호)</span>
+      </div>
+      <div class="settings-group">
+        <label style="font-size:12px; display:flex; align-items:center; gap:4px;">
+          <input type="radio" name="scm-color-col" value="-1" checked> 색상열 없음(코드만 매칭)
+        </label>
+      </div>
+      <div style="margin-left:auto;">
+        <button class="btn btn-primary" onclick="applyScmMapping()">✅ 매핑 적용</button>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th style="min-width:50px;">행</th>`;
+
+  for (let c = 0; c < maxCols; c++) {
+    html += `<th style="min-width:90px;">
+      <div style="font-size:10px; color:var(--text3); margin-bottom:2px;">${colLetter(c)}열</div>
+      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="radio" name="scm-code-col" value="${c}"> 코드</label>
+      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="radio" name="scm-color-col" value="${c}"> 색상</label>
+      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="checkbox" class="scm-amt-col" value="${c}"> 수량포함</label>
+    </th>`;
+  }
+  html += `</tr></thead><tbody>`;
+
+  previewRows.forEach((row, r) => {
+    html += `<tr><td style="background:#f8fafc; font-weight:600; color:var(--text3);">${r + 1}행</td>`;
+    for (let c = 0; c < maxCols; c++) {
+      const cell = row[c];
+      const display = cell instanceof Date ? fmtDate(cell) : (cell !== undefined && cell !== '' ? cell : '');
+      html += `<td>${display}</td>`;
+    }
+    html += `</tr>`;
+  });
+  html += `</tbody></table></div>
+    <p style="font-size:11px; color:var(--text3); margin-top:6px;">미리보기는 처음 15행만 표시합니다. 전체 ${raw.length}행 중 데이터 시작 행부터 끝까지 적용됩니다.</p>`;
+
+  document.getElementById('scm-mapping-content').innerHTML = html;
+}
+
+function applyScmMapping() {
+  const raw = state.scmRaw;
+  if (!raw || !raw.length) { alert('행사 점검 파일을 먼저 업로드하세요.'); return; }
+
+  const codeColEl = document.querySelector('input[name="scm-code-col"]:checked');
+  if (!codeColEl) { alert('코드열을 선택하세요.'); return; }
+  const codeCol = Number(codeColEl.value);
+
+  const colorColEl = document.querySelector('input[name="scm-color-col"]:checked');
+  const colorCol = colorColEl ? Number(colorColEl.value) : -1;
+
+  const amtCols = Array.from(document.querySelectorAll('.scm-amt-col:checked')).map(el => Number(el.value));
+  if (!amtCols.length) { alert('합산할 수량 열을 1개 이상 체크하세요.'); return; }
+
+  const startRow = Math.max(1, parseInt(document.getElementById('scm-start-row').value, 10) || 1);
+
+  const itemMap = {};
+  const codeMap = {};
+  for (let i = startRow - 1; i < raw.length; i++) {
+    const row = raw[i] || [];
+    const code = String(row[codeCol] || '').trim();
+    if (!code) continue;
+    const color = colorCol >= 0 ? String(row[colorCol] || '').trim() : '';
+    const amount = amtCols.reduce((s, c) => s + parseNum(row[c]), 0);
+    if (color) {
+      const key = `${code}_${color}`;
+      itemMap[key] = (itemMap[key] || 0) + amount;
+    }
+    codeMap[code] = (codeMap[code] || 0) + amount;
+  }
+
+  state.scmData = { itemMap, codeMap };
+  state.planRows.forEach(row => {
+    row.eventFcst = itemMap[row.key] ?? codeMap[row.code] ?? 0;
+  });
+  alert(`행사량 매핑 적용 완료 (품목 ${Object.keys(codeMap).length}개)`);
+  if (state.planRows.length) renderMainTable();
+}
+
+// ===== 관리 품목 코드 로드 =====
+function loadCodes(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.split('\n').map(l => l.trim()).filter(Boolean);
+    state.managedCodes = lines;
+    setUploaded('btn-codes', 'name-codes', file.name);
+    document.getElementById('managed-bar').style.display = 'flex';
+    document.getElementById('managed-count').textContent = `${lines.length}개 로드됨`;
+    console.log('관리품목:', lines.length, '개');
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+// ===== 메인 계획표 생성 =====
+function buildMainTable() {
+  if (!state.orderData) { alert('수주량 파일을 먼저 업로드하세요.'); return; }
+  if (!state.baseDate) { alert('기준일을 먼저 설정하세요.'); return; }
+
+  // 작업 진행상태(O/△) 표시는 계획표를 다시 생성해도 유지되도록 미리 저장해둠
+  const prevMarks = {};
+  (state.planRows || []).forEach(r => { if (r.statusMark) prevMarks[r.key] = r.statusMark; });
+
+  const bd = state.baseDate;
+  const prevDate  = fmtDate(new Date(bd.getTime() - 86400000));      // 기준전일 (기준일-1)
+  const prev8Date = fmtDate(new Date(bd.getTime() - 8 * 86400000));  // 전주비교일 (기준전일-7)
+
+  // 요일별 날짜 (기준일이 월요일 기준)
+  const weekDates = [0,1,2,3,4].map(d => {
+    const dt = new Date(bd.getTime() + d * 86400000);
+    return { date: dt, label: ['월','화','수','목','금'][d], fmt: `${dt.getMonth()+1}/${dt.getDate()}` };
+  });
+
+  // grd 날짜 목록 (엑셀에 입력된 기간 전체 - 입고예량/출고예량 합산 범위)
+  const grdDatesFull = state.grdData ? state.grdData.dates : [];
+
+  state.planRows = state.orderData.items.map(item => {
+    const grdItem = state.grdData?.items[item.key];
+    const isManaged = state.managedCodes.includes(item.code);
+
+    // 품목명: 수주파일에 없으면 grd에서 보완
+    const name = item.name || grdItem?.name || '';
+
+    // 기준전일 재고 / 전주비교일 재고
+    const prevStock  = grdItem ? (grdItem.stockByDate[prevDate]  ?? '') : '';
+    const prev8Stock = grdItem ? (grdItem.stockByDate[prev8Date] ?? '') : '';
+
+    // 재고증감 = 기준전일 - 전주비교일
+    const stockDiff = (prevStock !== '' && prev8Stock !== '') ? prevStock - prev8Stock : '';
+    // 재고-주평균 = 기준전일 재고 - 주간평균
+    const stockMinusAvg = (prevStock !== '' && item.weekAvg) ? prevStock - item.weekAvg : '';
+
+    // 3개월평균매출: grd_list의 "3개월평균매출" 열 값
+    const total3m = grdItem?.avg3m || 0;
+
+    // 입고예량/출고예량: 엑셀에 입력된 기간 전체(물입예/출예) 합산
+    let mulipSum = 0;
+    let chuyeSum = 0;
+    if (grdItem) {
+      grdDatesFull.forEach(d => {
+        mulipSum += grdItem.mulipByDate[d] || 0;
+        chuyeSum += grdItem.chuyeByDate[d] || 0;
+      });
+    }
+
+    // 행사량 매핑 결과 조회: 코드_색상 키 우선, 없으면 코드만으로 매칭
+    const eventFcst = state.scmData?.itemMap?.[item.key] ?? state.scmData?.codeMap?.[item.code] ?? 0;
+
+    const dayQty = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0 };
+    let targetQty = 0;
+    weekDates.forEach(d => {
+      const qty = item.orderByDate?.[fmtDate(d.date)] || 0;
+      dayQty[d.label] = qty;
+      targetQty += qty;
+    });
+
+    return {
+      ...item,
+      name,
+      isManaged,
+      prevStock, prev8Stock, stockDiff, stockMinusAvg,
+      total3m, mulipSum, chuyeSum, eventFcst,
+      targetQty,
+      dayQty,
+      lineCode: matchLineCode(grdItem?.lineRaw),
+      plUnit: PL_UNIT_MAP[item.key],
+      statusMark: prevMarks[item.key] || '',
+      stockType: grdItem?.stockType || '',
+      useYn: grdItem?.useYn || '',
+      grdColored: state.grdData?.coloredKeys?.has(item.key) || false,
+      weekDates
+    };
+  });
+
+  // localStorage 중간저장 데이터 자동 복원 (파일 재업로드 후 계획표 재생성 시 입력값 유지)
+  try {
+    const savedStr = localStorage.getItem('planSaveData_v1');
+    if (savedStr) {
+      const saved = JSON.parse(savedStr);
+      if (saved.holidayDates) state.holidayDates = new Set(saved.holidayDates);
+      // v2: planRows 배열 / v1 레거시: rows 객체
+      const savedMap = {};
+      if (saved.planRows) { saved.planRows.forEach(r => { savedMap[r.key] = r; }); }
+      else if (saved.rows) { Object.assign(savedMap, saved.rows); }
+      if (Object.keys(savedMap).length > 0) {
+        let cnt = 0;
+        state.planRows.forEach(row => {
+          const s = savedMap[row.key];
+          if (!s) return;
+          if (s.dayQty) row.dayQty = { ...row.dayQty, ...s.dayQty };
+          if (s.targetQty !== undefined) row.targetQty = s.targetQty || 0;
+          if (s.eventFcst !== undefined && !state.scmData) row.eventFcst = s.eventFcst || 0;
+          if (s.lineCode) row.lineCode = s.lineCode;
+          if (s.statusMark !== undefined) row.statusMark = s.statusMark || '';
+          cnt++;
+        });
+        if (cnt > 0) {
+          const ts = saved.ts ? new Date(saved.ts).toLocaleString('ko-KR') : '';
+          updateSaveIndicator(ts, true);
+          setTimeout(() => showAutoToast(`💾 입력 데이터 복원됨 (${ts})`, '#1d4ed8'), 600);
+        }
+      }
+    }
+  } catch {}
+
+  state.showName = true;
+  document.getElementById('main-filter-bar').style.display = 'flex';
+  renderMainTable();
+}
+
+// ===== 메인 테이블 렌더링 =====
+function renderMainTable() {
+  const rows = getFilteredRows();
+  const weekDates = state.planRows[0]?.weekDates || [];
+  document.getElementById('row-count').textContent = `${rows.length}건`;
+
+  let html = `<div class="table-wrap freeze-wrap"><table class="freeze-table">
+    <colgroup>
+      <col style="width:70px">
+      <col style="width:120px">
+      <col style="width:70px">
+      <col id="col-name" style="width:${state.showName ? state.nameColWidth : 0}px">
+      <col style="width:56px">
+      <col style="width:56px">
+      <col style="width:48px">
+      <col style="width:70px">
+      <col style="width:75px">
+      <col style="width:75px">
+      <col style="width:70px">
+      <col style="width:75px">
+      <col style="width:70px">
+      <col style="width:70px">
+      <col style="width:75px">
+      <col style="width:70px">
+      ${weekDates.map(() => `<col style="width:60px">`).join('')}
+      <col style="width:65px">
+      <col style="width:55px">
+      <col style="width:55px">
+      <col style="width:150px">
+    </colgroup>
+    <thead>
+      <tr>
+        <th rowspan="2">분류</th>
+        <th rowspan="2">품목코드</th>
+        <th rowspan="2">색상</th>
+        <th rowspan="2" class="name-col-header" ${!state.showName ? 'style="display:none"' : ''}><span class="name-col-text">품목명</span><span class="col-resizer"></span></th>
+        <th rowspan="2">재고<br>구분</th>
+        <th rowspan="2">사용<br>여부</th>
+        <th rowspan="2">확인</th>
+        <th rowspan="2">주간평균</th>
+        <th rowspan="2">전주<br>비교일</th>
+        <th rowspan="2">기준전일<br>재고</th>
+        <th rowspan="2">재고<br>증감</th>
+        <th rowspan="2">재고-<br>주평균</th>
+        <th rowspan="2">입고<br>예량</th>
+        <th rowspan="2">출고<br>예량</th>
+        <th rowspan="2">행사<br>FCST${state.scmData ? '' : '(수기)'}</th>
+        <th rowspan="2">목표<br>생산량</th>
+        ${weekDates.map(d => {
+          const dstr = fmtDate(d.date);
+          const isHoliday = isHolidayDate(dstr);
+          const title = isAutoHoliday(dstr) ? '공휴일(자동 인식)' : '클릭하여 임시 휴일 표시 전환';
+          return `<th class="${isHoliday ? 'day-header-holiday' : ''}" title="${title}" onclick="toggleHoliday('${dstr}')">${d.label}<br><small>${d.fmt}</small></th>`;
+        }).join('')}
+        <th rowspan="2">합계</th>
+        <th rowspan="2">검증</th>
+        <th rowspan="2">P/L<br>단위</th>
+        <th rowspan="2">포장라인</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  rows.forEach(row => {
+    const isManaged = row.isManaged;
+    const weekTotal = Object.values(row.dayQty).reduce((s,v) => s + (v||0), 0);
+    const verified = row.targetQty > 0 && weekTotal === row.targetQty;
+    const nameStyle = !state.showName ? 'style="display:none"' : '';
+    const codeCls = `code-cell ${isManaged ? 'managed-code' : ''}`;
+    const blockType = BLOCK_ITEM_TYPE[row.key];
+    const needsDateHint = DATE_HINT_BLOCK_TYPES.includes(blockType);
+    const plMismatch = row.plUnit > 0 && weekTotal % row.plUnit !== 0;
+    const hasAnyInput = weekTotal > 0 || row.targetQty > 0;
+
+    html += `<tr data-key="${row.key}" data-name="${row.name}" data-code="${row.code}" ${row.grdColored ? 'class="grd-colored"' : ''}>
+      <td>${row.category || ''}</td>
+      <td class="${codeCls}" onclick="copyCodeCell('${row.code}')">${row.code}</td>
+      <td>${row.color}</td>
+      <td class="name-col" ${nameStyle}><span class="name-col-text">${row.name || ''}</span></td>
+      <td style="font-size:11px;">${row.stockType || ''}</td>
+      <td style="font-size:11px;">${row.useYn || ''}</td>
+      <td class="input-cell ${row.statusMark === 'O' ? 'mark-cell-o' : row.statusMark === '△' ? 'mark-cell-tri' : ''}">
+        <select class="mark-select ${row.statusMark === 'O' ? 'mark-o' : row.statusMark === '△' ? 'mark-tri' : ''}" onchange="updateStatusMark('${row.key}', this.value, this)">
+          <option value="" ${!row.statusMark ? 'selected' : ''}>-</option>
+          <option value="O" ${row.statusMark === 'O' ? 'selected' : ''}>O</option>
+          <option value="△" ${row.statusMark === '△' ? 'selected' : ''}>△</option>
+        </select>
+      </td>
+      <td class="week-avg-cell ${weekAvgBorderClass(row)}">${fmtNum(row.weekAvg,1)}</td>
+      <td class="${row.prev8Stock < 0 ? 'neg' : ''}">${row.prev8Stock !== '' ? fmtNum(row.prev8Stock) : '-'}</td>
+      <td class="${row.prevStock < 0 ? 'neg' : ''}">${row.prevStock !== '' ? fmtNum(row.prevStock) : '-'}</td>
+      <td class="${row.stockDiff < 0 ? 'neg' : row.stockDiff > 0 ? 'pos-green' : ''}">${row.stockDiff !== '' ? fmtNum(row.stockDiff) : '-'}</td>
+      <td class="${row.stockMinusAvg < 0 ? 'neg' : ''}">${row.stockMinusAvg !== '' ? fmtNum(row.stockMinusAvg) : '-'}</td>
+      <td class="${row.mulipSum > 0 ? 'pos-green' : ''}">${fmtNum(row.mulipSum)}</td>
+      <td class="${row.chuyeSum > 0 ? 'pos-green' : ''}">${fmtNum(row.chuyeSum)}</td>
+      ${state.scmData
+        ? `<td>${fmtNum(row.eventFcst)}</td>`
+        : `<td class="input-cell">
+        <input type="number" min="0" value="${row.eventFcst || ''}" placeholder="0"
+          onchange="updateEventFcst('${row.key}', this.value)" style="width:55px">
+      </td>`}
+      <td class="input-cell">
+        <input type="number" min="0" value="${row.targetQty || ''}" placeholder="0"
+          onchange="updateTarget('${row.key}', this.value)" style="width:55px">
+      </td>
+      ${['월','화','수','목','금'].map((d,i) => {
+        // 엘라스틱·테롤 22 소요 품목은 기준일(월)·기준일+1(화)에 생산 → 해당 칸에 연한 노랑 표기
+        const dateHintCls = (needsDateHint && i <= 1) ? ' date-hint' : '';
+        const dObj = row.weekDates?.[i];
+        const isHoliday = dObj && isHolidayDate(fmtDate(dObj.date));
+        const holidayCls = isHoliday ? ' holiday-col' : '';
+        return `
+        <td class="input-cell col-${['mon','tue','wed','thu','fri'][i]}${dateHintCls}${holidayCls}">
+          <input type="number" min="0" value="${row.dayQty[d] || ''}" placeholder="0"
+            onchange="updateDay('${row.key}', '${d}', this.value)" style="width:45px">
+        </td>`;
+      }).join('')}
+      <td class="${verified ? 'verified' : hasAnyInput ? 'not-verified' : ''}">${fmtNum(weekTotal)}</td>
+      <td class="${verified ? 'verified' : hasAnyInput ? 'not-verified' : ''}">${verified ? '✅' : hasAnyInput ? '❌' : '-'}</td>
+      <td class="${plMismatch ? 'pl-mismatch' : ''}">${row.plUnit || '-'}</td>
+      <td class="input-cell">
+        <select class="line-select" onchange="updateLine('${row.key}', this.value)">
+          ${Object.entries(state.LINE_CODES).map(([k,v]) =>
+            `<option value="${k}" ${row.lineCode === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+  document.getElementById('main-content').innerHTML = html;
+  initNameColResizer();
+  refreshCapaUI();
+  requestAnimationFrame(updateMainFreezeLeft);
+}
+
+// 요일 헤더 클릭 시 해당 날짜를 공휴일로 표시/해제 (진한 검은색 배경 + 붉은 테두리)
+function toggleHoliday(dateStr) {
+  if (state.holidayDates.has(dateStr)) state.holidayDates.delete(dateStr);
+  else state.holidayDates.add(dateStr);
+  renderMainTable();
+  autoSavePlan();
+}
+
+// 메인 표 틀고정 열(분류~주간평균, 8개)의 sticky left를 실제 렌더된 폭 기준으로 재계산
+function updateMainFreezeLeft() {
+  const table = document.querySelector('#main-content .freeze-table');
+  if (!table) return;
+  const headRow = table.querySelector('thead tr');
+  if (!headRow) return;
+  const FREEZE_COLS = 8;
+  let left = 0;
+  for (let i = 1; i <= FREEZE_COLS && i <= headRow.children.length; i++) {
+    table.querySelectorAll(`th:nth-child(${i}), td:nth-child(${i})`).forEach(el => {
+      el.style.left = left + 'px';
+    });
+    left += headRow.children[i - 1].offsetWidth;
+  }
+}
+
+// 품목명 열 드래그 리사이즈
+// 시각 표시용 막대(.col-resizer)는 6px로 얇아서 정확히 못 맞히면 클릭이 전혀 안 먹는 문제가 있었음
+// → 실제 드래그 판정은 th 우측 끝에서 EDGE px 이내 마우스다운이면 항상 시작하도록 th 전체에 걸어 더 넓게 잡음
+function initNameColResizer() {
+  const th = document.querySelector('.freeze-table thead th.name-col-header');
+  const col = document.getElementById('col-name');
+  if (!th || !col) return;
+  const EDGE = 10;
+  let startX = 0, startW = 0;
+
+  th.addEventListener('mousemove', e => {
+    const rect = th.getBoundingClientRect();
+    th.style.cursor = (rect.right - e.clientX <= EDGE) ? 'col-resize' : '';
+  });
+  th.addEventListener('mouseleave', () => { th.style.cursor = ''; });
+
+  th.addEventListener('mousedown', e => {
+    const rect = th.getBoundingClientRect();
+    if (rect.right - e.clientX > EDGE) return;
+    e.preventDefault();
+    startX = e.clientX;
+    startW = col.offsetWidth || state.nameColWidth;
+    document.body.style.cursor = 'col-resize';
+
+    function onMove(e) {
+      const newW = Math.max(5, startW + (e.clientX - startX));
+      state.nameColWidth = newW;
+      col.style.width = newW + 'px';
+      updateMainFreezeLeft();
+    }
+    function onUp() {
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+// ===== 입력 업데이트 =====
+function updateEventFcst(key, val) {
+  const row = state.planRows.find(r => r.key === key);
+  if (row) row.eventFcst = parseInt(val) || 0;
+  autoSavePlan();
+}
+
+function updateTarget(key, val) {
+  const row = state.planRows.find(r => r.key === key);
+  if (row) row.targetQty = parseInt(val) || 0;
+  refreshRowSummary(key);
+  refreshCapaUI();
+  autoSavePlan();
+}
+
+function updateDay(key, day, val) {
+  const row = state.planRows.find(r => r.key === key);
+  if (row) {
+    row.dayQty[day] = parseInt(val) || 0;
+    refreshRowSummary(key);
+    refreshCapaUI();
+  }
+  autoSavePlan();
+}
+
+function updateLine(key, val) {
+  const row = state.planRows.find(r => r.key === key);
+  if (row) row.lineCode = val;
+  autoSavePlan();
+}
+
+// 품목명 옆 진행상태 표시(O/△): 작업 완료/재작업 필요 여부를 사람이 직접 표시하는 용도
+function updateStatusMark(key, val, selectEl) {
+  const row = state.planRows.find(r => r.key === key);
+  if (row) row.statusMark = val;
+  if (selectEl) {
+    selectEl.classList.remove('mark-o', 'mark-tri');
+    if (val === 'O') selectEl.classList.add('mark-o');
+    else if (val === '△') selectEl.classList.add('mark-tri');
+    const td = selectEl.closest('td');
+    if (td) {
+      td.classList.remove('mark-cell-o', 'mark-cell-tri');
+      if (val === 'O') td.classList.add('mark-cell-o');
+      else if (val === '△') td.classList.add('mark-cell-tri');
+    }
+  }
+  autoSavePlan();
+}
+
+// ===== 중간저장 (localStorage 자동저장/복원) =====
+let _autoSaveTimer = null;
+function autoSavePlan() {
+  if (!state.planRows || !state.planRows.length) return;
+  clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(() => {
+    const saveData = {
+      version: '2',
+      ts: Date.now(),
+      baseDate: state.baseDate ? fmtDate(state.baseDate) : null,
+      weekLabel: document.getElementById('week-label')?.value || '',
+      holidayDates: Array.from(state.holidayDates),
+      planRows: state.planRows.map(r => ({
+        key: r.key, code: r.code, color: r.color,
+        name: r.name || '', category: r.category || '',
+        isManaged: r.isManaged || false,
+        prevStock: r.prevStock, prev8Stock: r.prev8Stock,
+        stockDiff: r.stockDiff, stockMinusAvg: r.stockMinusAvg,
+        mulipSum: r.mulipSum || 0, chuyeSum: r.chuyeSum || 0,
+        total3m: r.total3m || 0, weekAvg: r.weekAvg,
+        eventFcst: r.eventFcst || 0,
+        stockType: r.stockType || '', useYn: r.useYn || '',
+        grdColored: r.grdColored || false,
+        dayQty: { ...r.dayQty },
+        targetQty: r.targetQty || 0,
+        lineCode: r.lineCode || '', plUnit: r.plUnit || null,
+        statusMark: r.statusMark || '',
+        weekDates: (r.weekDates || []).map(d => ({
+          dateStr: fmtDate(d.date), label: d.label, fmt: d.fmt
+        }))
+      }))
+    };
+    try {
+      localStorage.setItem('planSaveData_v1', JSON.stringify(saveData));
+      updateSaveIndicator(new Date().toLocaleTimeString('ko-KR'), false);
+    } catch(e) { console.warn('자동저장 실패(용량 초과 가능):', e); }
+  }, 800);
+}
+
+function clearSavedPlan() {
+  if (!confirm('저장된 중간 작업 데이터를 초기화하시겠습니까?\n(현재 입력된 내용은 유지됩니다.)')) return;
+  localStorage.removeItem('planSaveData_v1');
+  updateSaveIndicator('', false);
+  showAutoToast('🗑️ 저장 데이터 초기화됨', '#64748b');
+}
+
+// 현재 화면에 입력한 수기 입력값(요일별 수량·목표생산량·행사 FCST 수기입력·확인 표시)만 초기화
+// 저장 초기화와 달리 자동저장 데이터에도 즉시 반영되어 새로고침해도 되살아나지 않음
+function clearManualInputs() {
+  if (!state.planRows || !state.planRows.length) { alert('먼저 계획표를 생성하세요.'); return; }
+  if (!confirm('현재 입력한 내용을 모두 초기화하시겠습니까?\n(요일별 수량, 목표생산량, 행사 FCST 수기입력, 확인 표시가 모두 지워집니다.)')) return;
+  state.planRows.forEach(row => {
+    row.dayQty = { 월: 0, 화: 0, 수: 0, 목: 0, 금: 0 };
+    row.targetQty = 0;
+    if (!state.scmData) row.eventFcst = 0;
+    row.statusMark = '';
+  });
+  renderMainTable();
+  autoSavePlan();
+  showAutoToast('🧹 입력 내용 초기화됨', '#64748b');
+}
+
+function updateSaveIndicator(timeStr, isRestored) {
+  const el = document.getElementById('save-indicator');
+  if (!el) return;
+  if (!timeStr) { el.textContent = ''; return; }
+  el.textContent = isRestored ? `🔄 복원됨 (${timeStr})` : `💾 자동저장 ${timeStr}`;
+}
+
+function showAutoToast(msg, color) {
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;top:60px;right:20px;background:${color || '#1d4ed8'};color:#fff;padding:10px 16px;border-radius:6px;font-size:12px;font-weight:600;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);transition:opacity 0.3s`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; }, 2500);
+  setTimeout(() => t.remove(), 2900);
+}
+
+// 파일 업로드 없이 localStorage만으로 전체 화면 복원 (창을 닫았다 열 때)
+function tryRestoreFromLocalStorage() {
+  try {
+    const savedStr = localStorage.getItem('planSaveData_v1');
+    if (!savedStr) return false;
+    const saved = JSON.parse(savedStr);
+    if (!saved.planRows || !saved.planRows.length) return false;
+    return restorePlanState(saved, '자동복원');
+  } catch(e) { console.warn('자동복원 실패:', e); return false; }
+}
+
+function restorePlanState(saved, srcLabel) {
+  state.holidayDates = new Set(saved.holidayDates || []);
+  state.planRows = saved.planRows.map(r => ({
+    ...r,
+    weekDates: (r.weekDates || []).map(d => ({
+      date: new Date(d.dateStr), label: d.label, fmt: d.fmt
+    }))
+  }));
+  if (saved.baseDate) {
+    state.baseDate = new Date(saved.baseDate);
+    const bdEl = document.getElementById('base-date');
+    if (bdEl) { bdEl.value = saved.baseDate; onBaseDateChange(); }
+  }
+  if (saved.weekLabel) {
+    const wlEl = document.getElementById('week-label');
+    if (wlEl) wlEl.value = saved.weekLabel;
+  }
+  state.showName = true;
+  const fb = document.getElementById('main-filter-bar');
+  if (fb) fb.style.display = 'flex';
+  renderMainTable();
+  const ts = saved.ts ? new Date(saved.ts).toLocaleString('ko-KR') : '';
+  updateSaveIndicator(ts, true);
+  setTimeout(() => showAutoToast(`✅ ${srcLabel || '복원'} 완료 (${ts})`, '#059669'), 400);
+  return true;
+}
+
+// 작성용 파일의 _복원데이터 시트로부터 복원
+function loadRestoreFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'binary' });
+      const sheetName = wb.SheetNames.find(n => n === '_복원데이터');
+      if (!sheetName) {
+        alert('복원 데이터 시트(_복원데이터)를 찾을 수 없습니다.\n⬇️ 작성용 파일 버튼으로 다운로드한 파일만 가능합니다.');
+        return;
+      }
+      const ws = wb.Sheets[sheetName];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      const meta = raw[0] || [];
+      if (String(meta[0]) !== '__복원메타__') {
+        alert('유효한 복원 데이터를 찾을 수 없습니다.'); return;
+      }
+      const headers = raw[1] || [];
+      const idx = {};
+      headers.forEach((h, i) => { if (h) idx[String(h)] = i; });
+      const pn = (row, col) => { const v = row[idx[col]]; return v !== '' && v !== undefined ? Number(v) : 0; };
+      const ps = (row, col) => String(row[idx[col]] || '');
+      const pm = (row, col) => ps(row, col) === 'TRUE';
+      const pe = (row, col) => { const v = row[idx[col]]; return (v !== '' && v !== undefined) ? Number(v) : ''; };
+
+      const planRows = [];
+      for (let r = 2; r < raw.length; r++) {
+        const row = raw[r];
+        if (!row[idx['key']]) continue;
+        const weekDates = ['월','화','수','목','금'].map(label => {
+          const ds = ps(row, `date_${label}`);
+          return ds ? { date: new Date(ds), label, fmt: ps(row, `fmt_${label}`) } : null;
+        }).filter(Boolean);
+        planRows.push({
+          key: ps(row,'key'), code: ps(row,'code'), color: ps(row,'color'),
+          name: ps(row,'name'), category: ps(row,'category'),
+          isManaged: pm(row,'isManaged'),
+          prevStock: pe(row,'prevStock'), prev8Stock: pe(row,'prev8Stock'),
+          stockDiff: pe(row,'stockDiff'), stockMinusAvg: pe(row,'stockMinusAvg'),
+          mulipSum: pn(row,'mulipSum'), chuyeSum: pn(row,'chuyeSum'),
+          total3m: pn(row,'total3m'), weekAvg: pe(row,'weekAvg'),
+          eventFcst: pn(row,'eventFcst'),
+          stockType: ps(row,'stockType'), useYn: ps(row,'useYn'),
+          grdColored: pm(row,'grdColored'),
+          targetQty: pn(row,'targetQty'), lineCode: ps(row,'lineCode'),
+          plUnit: row[idx['plUnit']] !== '' ? Number(row[idx['plUnit']]) : null,
+          statusMark: ps(row,'statusMark'),
+          dayQty: { '월':pn(row,'qty_월'),'화':pn(row,'qty_화'),'수':pn(row,'qty_수'),'목':pn(row,'qty_목'),'금':pn(row,'qty_금') },
+          weekDates
+        });
+      }
+      if (!planRows.length) { alert('복원할 데이터가 없습니다.'); return; }
+      const holidayDates = String(meta[4] || '').split(',').filter(Boolean);
+      const saved = {
+        version: '2', ts: Number(meta[3]) || Date.now(),
+        baseDate: String(meta[1] || ''), weekLabel: String(meta[2] || ''),
+        holidayDates,
+        planRows
+      };
+      localStorage.setItem('planSaveData_v1', JSON.stringify(saved));
+      setUploaded('btn-restore', 'name-restore', file.name);
+      restorePlanState(saved, '파일 복원');
+    } catch(err) { alert('복원 파일 오류: ' + err.message); }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function refreshRowSummary(key) {
+  const row = state.planRows.find(r => r.key === key);
+  if (!row) return;
+  const weekTotal = Object.values(row.dayQty).reduce((s,v) => s + (v||0), 0);
+  const verified = row.targetQty > 0 && weekTotal === row.targetQty;
+  const hasAnyInput = weekTotal > 0 || row.targetQty > 0;
+  const tr = document.querySelector(`tr[data-key="${key}"]`);
+  if (!tr) return;
+  const cells = tr.querySelectorAll('td');
+  const totalCell = cells[cells.length - 4];
+  const verCell = cells[cells.length - 3];
+  const plCell = cells[cells.length - 2];
+  totalCell.textContent = fmtNum(weekTotal);
+  totalCell.className = verified ? 'verified' : hasAnyInput ? 'not-verified' : '';
+  verCell.textContent = verified ? '✅' : hasAnyInput ? '❌' : '-';
+  verCell.className = verified ? 'verified' : hasAnyInput ? 'not-verified' : '';
+  const plMismatch = row.plUnit > 0 && weekTotal % row.plUnit !== 0;
+  plCell.className = plMismatch ? 'pl-mismatch' : '';
+  const weekAvgCell = tr.querySelector('.week-avg-cell');
+  if (weekAvgCell) weekAvgCell.className = `week-avg-cell ${weekAvgBorderClass(row)}`;
+}
+
+// 목표생산량과 주간평균 비교: 목표생산량이 많으면 연한 녹색, 적으면 연한 분홍색 테두리
+function weekAvgBorderClass(row) {
+  if (!row.targetQty || row.weekAvg === '' || row.weekAvg == null) return '';
+  if (row.targetQty > row.weekAvg) return 'week-avg-high';
+  if (row.targetQty < row.weekAvg) return 'week-avg-low';
+  return '';
+}
+
+// ===== 필터/검색 =====
+function getFilteredRows() {
+  let rows = state.planRows;
+  const q = document.getElementById('main-search')?.value.toLowerCase() || '';
+  if (q) rows = rows.filter(r => r.code.toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q));
+  if (state.filterModes.has('managed')) rows = rows.filter(r => r.isManaged);
+  if (state.filterModes.has('neg')) rows = rows.filter(r => r.prev8Stock < 0 || r.prevStock < 0 || r.stockMinusAvg < 0);
+  return rows;
+}
+
+function filterMainTable() { renderMainTable(); }
+
+// 필터 버튼은 중복 선택 가능(예: 관리품목만 + 재고부족 동시 적용 → 관리품목 중 재고부족만 표시)
+function toggleFilter(mode) {
+  if (state.filterModes.has(mode)) state.filterModes.delete(mode);
+  else state.filterModes.add(mode);
+  updateFilterButtons();
+  renderMainTable();
+}
+
+function clearFilters() {
+  state.filterModes.clear();
+  updateFilterButtons();
+  renderMainTable();
+}
+
+function updateFilterButtons() {
+  document.getElementById('filter-all').classList.toggle('active', state.filterModes.size === 0);
+  document.getElementById('filter-managed').classList.toggle('active', state.filterModes.has('managed'));
+  document.getElementById('filter-neg').classList.toggle('active', state.filterModes.has('neg'));
+}
+
+function toggleNameCol() {
+  state.showName = !state.showName;
+  document.getElementById('toggle-name-btn').textContent = state.showName ? '품목명 숨기기' : '품목명 보이기';
+  document.querySelectorAll('.name-col, .name-col-header').forEach(el => {
+    el.style.display = state.showName ? '' : 'none';
+  });
+  const col = document.getElementById('col-name');
+  if (col) col.style.width = (state.showName ? state.nameColWidth : 0) + 'px';
+  requestAnimationFrame(updateMainFreezeLeft);
+}
+
+// ===== 수주량 테이블 렌더링 =====
+function renderOrderTable() {
+  if (!state.orderData) return;
+  const items = state.orderData.items;
+  const bd = state.baseDate;
+  const prevDate  = bd ? fmtDate(new Date(bd.getTime() - 86400000))     : null;
+  const prev8Date = bd ? fmtDate(new Date(bd.getTime() - 8 * 86400000)) : null;
+  const prevLabel  = prevDate  ? `${parseInt(prevDate.slice(5,7))}/${parseInt(prevDate.slice(8,10))}`  : '기준전일';
+  const prev8Label = prev8Date ? `${parseInt(prev8Date.slice(5,7))}/${parseInt(prev8Date.slice(8,10))}` : '전주비교일';
+
+  let html = `<div class="table-wrap"><table>
+    <thead><tr>
+      <th>분류</th><th>품목코드</th><th>색상</th>
+      <th class="order-name-col">품목명</th>
+      <th>3개월<br>총수주</th><th>주간평균</th>
+      <th>${prevLabel}<br>재고</th><th>${prev8Label}<br>재고</th>
+      <th>재고증감</th><th>재고-<br>주평균</th>
+      <th>총 입고<br>예정수량</th><th>총 출고<br>예정수량</th>
+    </tr></thead><tbody>`;
+
+  items.forEach(item => {
+    const grdItem = state.grdData?.items[item.key];
+    const name = item.name || grdItem?.name || '';
+    const isManaged = state.managedCodes.includes(item.code);
+    const codeCls = `code-cell ${isManaged ? 'managed-code' : ''}`;
+
+    const prevStock  = (grdItem && prevDate)  ? (grdItem.stockByDate[prevDate]  ?? '') : '';
+    const prev8Stock = (grdItem && prev8Date) ? (grdItem.stockByDate[prev8Date] ?? '') : '';
+    const stockDiff = (prevStock !== '' && prev8Stock !== '') ? prevStock - prev8Stock : '';
+    const stockMinusAvg = (prevStock !== '' && item.weekAvg) ? prevStock - item.weekAvg : '';
+
+    // 총 입고/출고 예정수량: grd_list에 입력된 기간 전체(물입예/출예) 합산 - 메인 계획표의 입고예량/출고예량과 동일한 기준
+    let mulipSum = 0, chuyeSum = 0;
+    if (grdItem) {
+      (state.grdData.dates || []).forEach(d => {
+        mulipSum += grdItem.mulipByDate[d] || 0;
+        chuyeSum += grdItem.chuyeByDate[d] || 0;
+      });
+    }
+
+    const isNeg = prevStock < 0 || prev8Stock < 0 || stockMinusAvg < 0;
+    html += `<tr data-key="${item.key}" data-managed="${isManaged}" data-neg="${isNeg}">
+      <td>${item.category||''}</td>
+      <td class="${codeCls}" onclick="copyCodeCell('${item.code}')">${item.code}</td>
+      <td>${item.color}</td>
+      <td class="name-col order-name-col">${name}</td>
+      <td>${fmtNum(item.grandTotal)}</td>
+      <td>${fmtNum(item.weekAvg,1)}</td>
+      <td class="${prevStock < 0 ? 'neg' : ''}">${prevStock !== '' ? fmtNum(prevStock) : '-'}</td>
+      <td class="${prev8Stock < 0 ? 'neg' : ''}">${prev8Stock !== '' ? fmtNum(prev8Stock) : '-'}</td>
+      <td class="${stockDiff < 0 ? 'neg' : stockDiff > 0 ? 'pos-green' : ''}">${stockDiff !== '' ? fmtNum(stockDiff) : '-'}</td>
+      <td class="${stockMinusAvg < 0 ? 'neg' : ''}">${stockMinusAvg !== '' ? fmtNum(stockMinusAvg,1) : '-'}</td>
+      <td class="${mulipSum > 0 ? 'pos-green' : ''}">${fmtNum(mulipSum)}</td>
+      <td class="${chuyeSum > 0 ? 'pos-green' : ''}">${fmtNum(chuyeSum)}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  document.getElementById('order-content').innerHTML = html;
+  filterOrderTable();
+}
+
+function filterOrderTable() {
+  const q = document.getElementById('order-search').value.toLowerCase();
+  document.querySelectorAll('#order-content tr[data-key]').forEach(tr => {
+    const code = tr.dataset.key.toLowerCase();
+    const name = tr.querySelector('.order-name-col')?.textContent.toLowerCase() || '';
+    const matchSearch = !q || code.includes(q) || name.includes(q);
+    const matchManaged = !state.orderFilterModes.has('managed') || tr.dataset.managed === 'true';
+    const matchNeg = !state.orderFilterModes.has('neg') || tr.dataset.neg === 'true';
+    tr.style.display = (matchSearch && matchManaged && matchNeg) ? '' : 'none';
+  });
+}
+
+// 관리품목만/재고부족 필터는 중복 선택 가능(AND 조건)
+function toggleOrderFilter(mode) {
+  if (state.orderFilterModes.has(mode)) state.orderFilterModes.delete(mode);
+  else state.orderFilterModes.add(mode);
+  document.getElementById('order-filter-all').classList.toggle('active', state.orderFilterModes.size === 0);
+  document.getElementById('order-filter-managed').classList.toggle('active', state.orderFilterModes.has('managed'));
+  document.getElementById('order-filter-neg').classList.toggle('active', state.orderFilterModes.has('neg'));
+  filterOrderTable();
+}
+
+function clearOrderFilters() {
+  state.orderFilterModes.clear();
+  document.getElementById('order-filter-all').classList.add('active');
+  document.getElementById('order-filter-managed').classList.remove('active');
+  document.getElementById('order-filter-neg').classList.remove('active');
+  filterOrderTable();
+}
+
+function toggleOrderNameCol() {
+  state.showOrderName = !state.showOrderName;
+  document.getElementById('toggle-order-name').textContent = state.showOrderName ? '품목명 숨기기' : '품목명 보이기';
+  document.querySelectorAll('.order-name-col').forEach(el => el.style.display = state.showOrderName ? '' : 'none');
+}
+
+// 품목키(코드_색상)별로 생산계획 입력수량을 날짜별 누적값으로 변환
+// (생산된 날부터는 이후 모든 날짜의 재고에 계속 더해짐 - 한 번 생산되면 재고에 남아있으므로)
+function getProductionAddByDate() {
+  const result = {};
+  if (!state.planRows.length || !state.baseDate) return result;
+  const bd = state.baseDate;
+  const labels = ['월','화','수','목','금'];
+  const weekDates = labels.map((label, i) => ({ date: fmtDate(new Date(bd.getTime() + i * 86400000)), label }));
+  state.planRows.forEach(row => {
+    let cum = 0;
+    const byDate = {};
+    weekDates.forEach(wd => {
+      cum += row.dayQty[wd.label] || 0;
+      byDate[wd.date] = cum;
+    });
+    result[row.key] = byDate;
+  });
+  return result;
+}
+
+// prodMap(날짜→그날까지 누적 생산량)에서 target 날짜 기준으로 적용될 누적 생산량 조회
+// target이 생산주간 이전이면 0, 생산주간 마지막 날짜 이후면 주간 합계가 계속 유지됨
+function getAddedQtyForDate(prodMap, target) {
+  let result = 0;
+  for (const d of Object.keys(prodMap)) {
+    if (d <= target) result = prodMap[d];
+  }
+  return result;
+}
+
+// ===== 재고량 테이블 렌더링 =====
+function renderStockTable() {
+  if (!state.grdData) return;
+  const items = Object.values(state.grdData.items);
+  const dates = state.grdData.dates.slice(0, 20); // 앞 20일만 표시
+  const prodByKey = state.stockUpdated ? getProductionAddByDate() : {};
+
+  let html = `<div class="table-wrap"><table>
+    <thead><tr>
+      <th>품목코드</th><th>색상</th>
+      <th class="stock-name-col">품목명</th>
+      <th>현재고</th><th>투입후재고</th><th>재고구분</th>
+      ${dates.map(d => `<th>${d.slice(5)}</th>`).join('')}
+    </tr></thead><tbody>`;
+
+  items.forEach(item => {
+    const isManaged = state.managedCodes.includes(item.code);
+    const codeCls = `code-cell ${isManaged ? 'managed-code' : ''}`;
+    const key = `${item.code}_${item.color}`;
+    const prodMap = prodByKey[key];
+    const isNeg = item.curStock < 0 || item.postInputStock < 0;
+    html += `<tr data-key="${key}" data-managed="${isManaged}" data-neg="${isNeg}">
+      <td class="${codeCls}" onclick="copyCodeCell('${item.code}')">${item.code}</td>
+      <td>${item.color}</td>
+      <td class="name-col stock-name-col"><span class="name-col-text">${item.name||''}</span></td>
+      <td class="${item.curStock < 0 ? 'neg' : ''}">${fmtNum(item.curStock)}</td>
+      <td class="${item.postInputStock < 0 ? 'neg' : ''}">${fmtNum(item.postInputStock)}</td>
+      <td>${item.stockType||''}</td>
+      ${dates.map(d => {
+        const base = item.stockByDate[d];
+        const added = prodMap ? getAddedQtyForDate(prodMap, d) : 0;
+        const v = base !== undefined ? base + added : undefined;
+        const cls = v < 0 ? 'neg' : (added > 0 ? 'stock-updated' : '');
+        return `<td class="${cls}">${v !== undefined ? fmtNum(v) : '-'}</td>`;
+      }).join('')}
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  document.getElementById('stock-content').innerHTML = html;
+  filterStockTable();
+}
+
+function updateStockWithPlan() {
+  if (!state.grdData) { alert('grd_list 파일을 먼저 업로드하세요.'); return; }
+  if (!state.planRows.length) { alert('생산계획 입력 탭에서 계획표를 먼저 생성하세요.'); return; }
+  state.stockUpdated = true;
+  renderStockTable();
+}
+
+function filterStockTable() {
+  const q = document.getElementById('stock-search').value.toLowerCase();
+  document.querySelectorAll('#stock-content tr[data-key]').forEach(tr => {
+    const key = tr.dataset.key.toLowerCase();
+    const name = tr.querySelector('.stock-name-col')?.textContent.toLowerCase() || '';
+    const matchSearch = !q || key.includes(q) || name.includes(q);
+    const matchManaged = !state.stockFilterModes.has('managed') || tr.dataset.managed === 'true';
+    const matchNeg = !state.stockFilterModes.has('neg') || tr.dataset.neg === 'true';
+    tr.style.display = (matchSearch && matchManaged && matchNeg) ? '' : 'none';
+  });
+}
+
+// 관리품목만/재고부족 필터는 중복 선택 가능(AND 조건)
+function toggleStockFilter(mode) {
+  if (state.stockFilterModes.has(mode)) state.stockFilterModes.delete(mode);
+  else state.stockFilterModes.add(mode);
+  document.getElementById('stock-filter-all').classList.toggle('active', state.stockFilterModes.size === 0);
+  document.getElementById('stock-filter-managed').classList.toggle('active', state.stockFilterModes.has('managed'));
+  document.getElementById('stock-filter-neg').classList.toggle('active', state.stockFilterModes.has('neg'));
+  filterStockTable();
+}
+
+function clearStockFilters() {
+  state.stockFilterModes.clear();
+  document.getElementById('stock-filter-all').classList.add('active');
+  document.getElementById('stock-filter-managed').classList.remove('active');
+  document.getElementById('stock-filter-neg').classList.remove('active');
+  filterStockTable();
+}
+
+function toggleStockNameCol() {
+  state.showStockName = !state.showStockName;
+  document.getElementById('toggle-stock-name').textContent = state.showStockName ? '품목명 숨기기' : '품목명 보이기';
+  document.querySelectorAll('.stock-name-col').forEach(el => el.style.display = state.showStockName ? '' : 'none');
+}
+
+// ===== 블록 소요량 =====
+// ===== 블록 소요량 품목 매핑 ("☆생산계획_작성용_파일_2026" 7월1주차 시트 V14/V22/V29 블록·라텍스·테롤 소요량 수식에서 직접 추출/검증) =====
+// 구조: 각 규격별로 [{ code: '품목코드_색상', pl: PL단위 }] 목록
+// 소요량 = ROUNDUP(SUM(각 품목 계획합 / PL단위), 0)  (원본 수식: =SUM(N그룹)/PL ... → AB열 ROUNDUP)
+const BLOCK_MAP = {
+  '레코텍': {
+    'S':  [
+      { code: 'SLMW0090A_5S3LS',   pl: 15 },
+      { code: 'SLTR0090A_1G2MS',   pl: 13 },
+      { code: 'SLTR0090PA_1G2MS',  pl: 8  },
+      { code: 'SLNN0090NLR1_2M1S', pl: 12 },
+      { code: 'SLNN0090NRR1_2M1S', pl: 12 },
+    ],
+    'SS': [
+      { code: 'IMF11AB00A_9M3',    pl: 15 },
+      { code: 'SLMW0110A_5S3LS',   pl: 15 },
+      { code: 'SLMW0110HA_5S3LS',  pl: 15 },
+      { code: 'HSCM0111FR_XX',     pl: 15 },
+      { code: 'SLTR0110A_1G2MS',   pl: 13 },
+      { code: 'SLTG0110B_1G2MS',   pl: 8  },
+      { code: 'SLTR0110PA_1G2MS',  pl: 8  },
+      { code: 'SLTU0110R1_1G2S',   pl: 15 },
+      { code: 'SLNM0110NL_5S1',    pl: 23 },
+      { code: 'SLNM0110NR_5S1',    pl: 23 },
+      { code: 'SLNN0110NLR1_2M1S', pl: 12 },
+      { code: 'SLNN0110NRR1_2M1S', pl: 12 },
+      { code: 'IMF11HV04A_3M2',    pl: 16 },
+    ],
+    'Q':  [
+      { code: 'SLMW0150A_5S3LS',   pl: 15 },
+      { code: 'SLMW0150HA_5S3LS',  pl: 15 },
+      { code: 'SLTG0150B_1G2MS',   pl: 8  },
+      { code: 'SLTR0150PA_1G2MS',  pl: 8  },
+      { code: 'SLTR0150A_1G2MS',   pl: 13 },
+      { code: 'SLTU0150R1_1G2S',   pl: 15 },
+      { code: 'SLNM0150NR_5S1',    pl: 23 },
+      { code: 'SLNN0150NRR1_2M1S', pl: 12 },
+    ],
+  },
+  '엘라스틱': {
+    'S':  [
+      { code: 'SLMW0090B_5S3AS',   pl: 15 },
+      { code: 'IMS09AC09A_S5MT4',  pl: 15 },
+      { code: 'SLTR0090PB_1G2MS',  pl: 8  },
+      { code: 'SLTR0090B_1G2MS',   pl: 13 },
+      { code: 'SLNN0090PLR1_2M1S', pl: 16 },
+      { code: 'SLNN0090PRR1_2M1S', pl: 16 },
+    ],
+    'SS': [
+      { code: 'SLMW0110B_5S3AS',   pl: 15 },
+      { code: 'SLMW0110HB_5S3AS',  pl: 15 },
+      { code: 'SLTR0110PB_1G2MS',  pl: 8  },
+      { code: 'SLTR0110B_1G2MS',   pl: 13 },
+      { code: 'IMS11AC11A_S5MT4',  pl: 15 },
+      { code: 'IMF11AA03A_9MT3',   pl: 6  },
+      { code: 'SLNN0110PLR1_2M1S', pl: 16 },
+      { code: 'SLNN0110PRR1_2M1S', pl: 16 },
+      { code: 'IMS11HV11A_3M2',    pl: 24 },
+    ],
+    'Q':  [
+      { code: 'SLMW0150B_5S3AS',   pl: 15 },
+      { code: 'SLMW0150HB_5S3AS',  pl: 15 },
+      { code: 'SLTR0150PB_1G2MS',  pl: 8  },
+      { code: 'SLTR0150B_1G2MS',   pl: 13 },
+      { code: 'SLNN0150PRR1_2M1S', pl: 15 },
+    ],
+  },
+  '테롤 22': {
+    'S':  [{ code: 'IMF10HV00A_3M2', pl: 23 }],
+    'SS': [{ code: 'IMF11HV00A_3M2', pl: 23 }],
+    'Q':  [{ code: 'IMF15HV00A_3M2', pl: 23 }],
+    'K':  [{ code: 'IMF16HV00A_3M2', pl: 23 }],
+  },
+  // 2층 "1. 스프링_매트리스_생산계획_2026" 파일 7월1주차 시트 S~Z열 블록/라텍스 소요량 수식(예: =SUM(J9)/15+...)에서 코드·PL 추출
+  '스프링 레코텍': {
+    'S':  [{ code: 'HM40F09EBE_S5G2A', pl: 15 }],
+    'SS': [
+      { code: 'HM40F11EBE_S5G2A',  pl: 15 },
+      { code: 'HM50S10ECEN_S5G2A', pl: 23 },
+      { code: 'HM50S11ECEN_S5G2A', pl: 23 },
+      { code: 'IMS11HV00A_3M1',    pl: 10 },
+      { code: 'IMS11HV03A_3M2',    pl: 10 },
+      { code: 'IMS11HV06A_3M2',    pl: 15 },
+    ],
+    'Q':  [
+      { code: 'HM40F15EBE_S5G2A',  pl: 15 },
+      { code: 'IMS15HV00A_3M1',    pl: 10 },
+      { code: 'IMS15HV03A_3M2',    pl: 10 },
+      { code: 'IMS15HV06A_3M2',    pl: 15 },
+    ],
+    'K':  [
+      { code: 'IMS16HV00A_3M1',    pl: 10 },
+      { code: 'IMS16HV03A_3M2',    pl: 10 },
+      { code: 'IMS16HV06A_3M2',    pl: 15 },
+    ],
+    'KK': [
+      { code: 'IMS18HV00A_3M1',    pl: 10 },
+      { code: 'IMS18HV03A_3M2',    pl: 10 },
+      { code: 'IMS18HV06A_3M2',    pl: 15 },
+    ],
+  },
+  '스프링 엘라스틱': {
+    'S':  [{ code: 'SLMN0165A_2M1S',   pl: 13 }],
+    'SS': [{ code: 'SLMN0110BR1_5R4A', pl: 13 }],
+    'Q':  [{ code: 'SLMN0150BR1_5R4A', pl: 13 }],
+    'K':  [{ code: 'SLMN0165B_5R4A',   pl: 13 }],
+  },
+};
+
+// 품목코드_색상(row.key) → P/L단위(포장 LOT 단위) 매핑
+// ("☆생산계획_작성용_파일_2026" 7월1주차 시트 A열(코드_색상)/U열(P/L단위)에서 직접 추출)
+// 주의: BLOCK_MAP의 pl 값(블록 소요량 환산용)과는 다른 값임 — 같은 품목이라도 서로 다를 수 있음
+const PL_UNIT_MAP = {
+  'IMF11AB00A_9M3': 7,
+  'IMS09AC09A_S5MT4': 7,
+  'IMS11AC11A_S5MT4': 7,
+  'IMF11HV04A_3M2': 3,
+  'IMS11HV11A_3M2': 3,
+  'IMF11AA03A_9MT3': 5,
+  'HSCM0111FR_XX': 5,
+  'SLNM0110NL_5S1': 3,
+  'SLNM0110NR_5S1': 3,
+  'SLNM0150NR_5S1': 3,
+  'SLNN0090NLR1_2M1S': 3,
+  'SLNN0090NRR1_2M1S': 3,
+  'SLNN0090PLR1_2M1S': 3,
+  'SLNN0090PRR1_2M1S': 3,
+  'SLNN0110NLR1_2M1S': 3,
+  'SLNN0110NRR1_2M1S': 3,
+  'SLNN0110PLR1_2M1S': 3,
+  'SLNN0110PRR1_2M1S': 3,
+  'SLNN0150NRR1_2M1S': 3,
+  'SLNN0150PRR1_2M1S': 3,
+  'SLMW0090A_5S3LS': 12,
+  'SLMW0090B_5S3AS': 12,
+  'SLMW0110A_5S3LS': 12,
+  'SLMW0110B_5S3AS': 12,
+  'SLMW0110HA_5S3LS': 12,
+  'SLMW0110HB_5S3AS': 12,
+  'SLMW0150A_5S3LS': 6,
+  'SLMW0150B_5S3AS': 6,
+  'SLMW0150HA_5S3LS': 6,
+  'SLMW0150HB_5S3AS': 6,
+  'SLTU0110R1_1G2S': 30,
+  'SLTU0150R1_1G2S': 30,
+  'SLTG0110B_1G2MS': 30,
+  'SLTG0150B_1G2MS': 30,
+  'SLTR0090A_1G2MS': 30,
+  'SLTR0110A_1G2MS': 30,
+  'SLTR0150A_1G2MS': 30,
+  'SLTR0090B_1G2MS': 30,
+  'SLTR0110B_1G2MS': 30,
+  'SLTR0150B_1G2MS': 30,
+  'SLTR0090PA_1G2MS': 30,
+  'SLTR0110PA_1G2MS': 30,
+  'SLTR0150PA_1G2MS': 30,
+  'SLTR0090PB_1G2MS': 30,
+  'SLTR0110PB_1G2MS': 30,
+  'SLTR0150PB_1G2MS': 30,
+  'IMF10HV00A_3M2': 30,
+  'IMF11HV00A_3M2': 30,
+  'IMF15HV00A_3M2': 30,
+  'IMF16HV00A_3M2': 15,
+  'SLXX26040001_xx': 30,
+
+  // ("1. 스프링_매트리스_생산계획_2026" 7월1주차 시트 A열(코드_색상)/Q열(P/L단위)에서 직접 추출, 2층 스프링 매트리스 생산계획)
+  'HM50S10ECEN_S5G2A': 8,
+  'HM50S11ECEN_S5G2A': 8,
+  'SLMK0110_5S3A': 10,
+  'SLMK0150_5S3A': 8,
+  'HM40F09EBE_S5G2A': 5,
+  'HM40F11EBE_S5G2A': 5,
+  'HM40F15EBE_S5G2A': 5,
+  'IMF10AC00A_S5G2A': 5,
+  'IMF11AC00A_S5G2A': 5,
+  'IMF15AC00A_S5G2A': 5,
+  'IMS10AC03A_9M2': 8,
+  'IMS11AC03A_9M2': 8,
+  'IMS15AC03A_9M2': 5,
+  'IMS16AC03A_9M2': 5,
+  'IMS10AC00A_9M2': 7,
+  'IMS11AC00A_9M2': 7,
+  'IMS15AC00A_9M2': 5,
+  'IMS16AC00A_9M2': 5,
+  'IMS10AC01A_9M2': 7,
+  'IMS11AC01A_9M2': 7,
+  'IMS15AC01A_9M2': 5,
+  'IMS16AC01A_9M2': 5,
+  'IMS10CQ00A_3M2': 8,
+  'IMS11CQ00A_3M2': 8,
+  'IMS15CQ00A_3M2': 5,
+  'IMS16CQ00A_3M2': 5,
+  'IMS11AB00A_9M1': 8,
+  'IMS15AB00A_9M1': 5,
+  'IMS16AB00A_9M1': 5,
+  'IMS11AB01A_9M1': 8,
+  'IMS15AB01A_9M1': 5,
+  'IMS16AB01A_9M1': 5,
+  'IMS10AC02A_9M2': 10,
+  'IMS11AC02A_9M2': 10,
+  'IMS11HV00A_3M1': 5,
+  'IMS11HV01A_3M1': 5,
+  'IMS11HV02A_3M1': 5,
+  'IMS15HV00A_3M1': 5,
+  'IMS15HV01A_3M1': 5,
+  'IMS15HV02A_3M1': 5,
+  'IMS16HV00A_3M1': 5,
+  'IMS16HV01A_3M1': 5,
+  'IMS16HV02A_3M1': 5,
+  'IMS18HV00A_3M1': 5,
+  'IMS18HV01A_3M1': 5,
+  'IMS18HV02A_3M1': 5,
+  'IMS11HV03A_3M2': 5,
+  'IMS11HV04A_3M2': 5,
+  'IMS11HV05A_3M2': 5,
+  'IMS15HV03A_3M2': 5,
+  'IMS15HV04A_3M2': 5,
+  'IMS15HV05A_3M2': 5,
+  'IMS16HV03A_3M2': 5,
+  'IMS16HV04A_3M2': 5,
+  'IMS16HV05A_3M2': 5,
+  'IMS18HV03A_3M2': 5,
+  'IMS18HV04A_3M2': 5,
+  'IMS18HV05A_3M2': 5,
+  'IMS11HV06A_3M2': 7,
+  'IMS11HV07A_3M2': 7,
+  'IMS15HV06A_3M2': 5,
+  'IMS15HV07A_3M2': 5,
+  'IMS16HV06A_3M2': 5,
+  'IMS16HV07A_3M2': 5,
+  'IMS18HV06A_3M2': 5,
+  'IMS18HV07A_3M2': 5,
+  'SLMM0110L_5S1': 5,
+  'SLMM0150L_5S1': 5,
+  'SLMM0165L_5S1': 5,
+  'SLMM0180L_5S1': 5,
+  'SLMM0110N_5S1': 5,
+  'SLMM0150N_5S1': 5,
+  'SLMM0165N_5S1': 5,
+  'SLMM0180N_5S1': 5,
+  'SLMM0110P_5S1': 5,
+  'SLMM0150P_5S1': 5,
+  'SLMM0165P_5S1': 5,
+  'SLMM0180P_5S1': 5,
+  'SLMT0110L_5S2': 5,
+  'SLMT0150L_5S2': 5,
+  'SLMT0165L_5S2': 5,
+  'SLMT0180L_5S2': 5,
+  'SLMT0110N_5S2': 5,
+  'SLMT0150N_5S2': 5,
+  'SLMT0165N_5S2': 5,
+  'SLMT0180N_5S2': 5,
+  'SLMN0110A_2M1S': 5,
+  'SLMN0150A_2M1S': 5,
+  'SLMN0165A_2M1S': 5,
+  'SLMN0110BR1_5R4A': 5,
+  'SLMN0150BR1_5R4A': 5,
+  'SLMN0165B_5R4A': 5,
+  'SLMC0090_5N2': 5,
+  'SLMC0110_5N2': 5,
+  'SLMC0140_5N2': 5,
+  'SLMC0150_5N2': 5,
+  'SLMC0165_5N2': 5,
+};
+
+// ===== 2층 CAPA(저가/고가) 기본 매핑 =====
+// 품목코드_색상(row.key) → 2층 CAPA 라인(저가/고가)
+// ("1. 스프링_매트리스_생산계획_2026_backup_원본" 마지막 시트 I105:P107 CAPA표 수식에서 직접 추출)
+// 저가 라인 = SUM(4:37행)+SUM(96:100행), 고가 라인 = SUM(38:95행) — 같은 시트 내 행 구간으로 라인이 나뉨
+// CAPA 기준(시트 P104:P107 참조): 4명 기준(저가 2명, 고가 2명) → 저가 일 200개 수준 / 고가 일 40개 수준 / 합산 주간 1200개 수준
+const CAPA_LOW_KEYS = [
+  'HM50S10ECEN_S5G2A', 'HM50S11ECEN_S5G2A', 'SLMK0110_5S3A', 'SLMK0150_5S3A',
+  'HM40F09EBE_S5G2A', 'HM40F11EBE_S5G2A', 'HM40F15EBE_S5G2A',
+  'IMF10AC00A_S5G2A', 'IMF11AC00A_S5G2A', 'IMF15AC00A_S5G2A',
+  'IMS10AC03A_9M2', 'IMS11AC03A_9M2', 'IMS15AC03A_9M2', 'IMS16AC03A_9M2',
+  'IMS10AC00A_9M2', 'IMS11AC00A_9M2', 'IMS15AC00A_9M2', 'IMS16AC00A_9M2',
+  'IMS10AC01A_9M2', 'IMS11AC01A_9M2', 'IMS15AC01A_9M2', 'IMS16AC01A_9M2',
+  'IMS10CQ00A_3M2', 'IMS11CQ00A_3M2', 'IMS15CQ00A_3M2', 'IMS16CQ00A_3M2',
+  'IMS11AB00A_9M1', 'IMS15AB00A_9M1', 'IMS16AB00A_9M1',
+  'IMS11AB01A_9M1', 'IMS15AB01A_9M1', 'IMS16AB01A_9M1',
+  'IMS10AC02A_9M2', 'IMS11AC02A_9M2',
+  'SLMC0090_5N2', 'SLMC0110_5N2', 'SLMC0140_5N2', 'SLMC0150_5N2', 'SLMC0165_5N2',
+];
+const CAPA_HIGH_KEYS = [
+  'IMS11HV00A_3M1', 'IMS11HV01A_3M1', 'IMS11HV02A_3M1',
+  'IMS15HV00A_3M1', 'IMS15HV01A_3M1', 'IMS15HV02A_3M1',
+  'IMS16HV00A_3M1', 'IMS16HV01A_3M1', 'IMS16HV02A_3M1',
+  'IMS18HV00A_3M1', 'IMS18HV01A_3M1', 'IMS18HV02A_3M1',
+  'IMS11HV03A_3M2', 'IMS11HV04A_3M2', 'IMS11HV05A_3M2',
+  'IMS15HV03A_3M2', 'IMS15HV04A_3M2', 'IMS15HV05A_3M2',
+  'IMS16HV03A_3M2', 'IMS16HV04A_3M2', 'IMS16HV05A_3M2',
+  'IMS18HV03A_3M2', 'IMS18HV04A_3M2', 'IMS18HV05A_3M2',
+  'IMS11HV06A_3M2', 'IMS11HV07A_3M2', 'IMS15HV06A_3M2', 'IMS15HV07A_3M2',
+  'IMS16HV06A_3M2', 'IMS16HV07A_3M2', 'IMS18HV06A_3M2', 'IMS18HV07A_3M2',
+  'SLMM0110L_5S1', 'SLMM0150L_5S1', 'SLMM0165L_5S1', 'SLMM0180L_5S1',
+  'SLMM0110N_5S1', 'SLMM0150N_5S1', 'SLMM0165N_5S1', 'SLMM0180N_5S1',
+  'SLMM0110P_5S1', 'SLMM0150P_5S1', 'SLMM0165P_5S1', 'SLMM0180P_5S1',
+  'SLMT0110L_5S2', 'SLMT0150L_5S2', 'SLMT0165L_5S2', 'SLMT0180L_5S2',
+  'SLMT0110N_5S2', 'SLMT0150N_5S2', 'SLMT0165N_5S2', 'SLMT0180N_5S2',
+  'SLMN0110A_2M1S', 'SLMN0150A_2M1S', 'SLMN0165A_2M1S',
+  'SLMN0110BR1_5R4A', 'SLMN0150BR1_5R4A', 'SLMN0165B_5R4A',
+];
+const CAPA2_DEFAULT_MAP = {};
+CAPA_LOW_KEYS.forEach(k => { CAPA2_DEFAULT_MAP[k] = '저'; });
+CAPA_HIGH_KEYS.forEach(k => { CAPA2_DEFAULT_MAP[k] = '고'; });
+const CAPA_THRESHOLDS = { 저: 200, 고: 40 };
+const CAPA_DAY_COL_CLASS = { '월': 'col-mon', '화': 'col-tue', '수': 'col-wed', '목': 'col-thu', '금': 'col-fri' };
+
+// ===== 4층 CAPA(매트리스/모션/토퍼) 기본 매핑 =====
+// 품목코드_색상(row.key) → 4층 CAPA 라인(매트리스/모션/토퍼)
+// ("☆생산계획_작성용_파일_2026" 마지막 시트 B열(코드)/C열(색상) 기준: 4~6행=매트리스, 7~23행=모션, 24행 이후=토퍼)
+const CAPA4_MATTRESS_KEYS = ['IMF11AB00A_9M3', 'IMS09AC09A_S5MT4', 'IMS11AC11A_S5MT4'];
+const CAPA4_MOTION_KEYS = [
+  'IMF11HV04A_3M2', 'IMS11HV11A_3M2', 'IMF11AA03A_9MT3', 'HSCM0111FR_XX',
+  'SLNM0110NL_5S1', 'SLNM0110NR_5S1', 'SLNM0150NR_5S1',
+  'SLNN0090NLR1_2M1S', 'SLNN0090NRR1_2M1S', 'SLNN0090PLR1_2M1S', 'SLNN0090PRR1_2M1S',
+  'SLNN0110NLR1_2M1S', 'SLNN0110NRR1_2M1S', 'SLNN0110PLR1_2M1S', 'SLNN0110PRR1_2M1S',
+  'SLNN0150NRR1_2M1S', 'SLNN0150PRR1_2M1S',
+];
+const CAPA4_TOPPER_KEYS = [
+  'SLMW0090A_5S3LS', 'SLMW0090B_5S3AS', 'SLMW0110A_5S3LS', 'SLMW0110B_5S3AS',
+  'SLMW0110HA_5S3LS', 'SLMW0110HB_5S3AS', 'SLMW0150A_5S3LS', 'SLMW0150B_5S3AS',
+  'SLMW0150HA_5S3LS', 'SLMW0150HB_5S3AS',
+  'SLTU0110R1_1G2S', 'SLTU0150R1_1G2S', 'SLTG0110B_1G2MS', 'SLTG0150B_1G2MS',
+  'SLTR0090A_1G2MS', 'SLTR0110A_1G2MS', 'SLTR0150A_1G2MS',
+  'SLTR0090B_1G2MS', 'SLTR0110B_1G2MS', 'SLTR0150B_1G2MS',
+  'SLTR0090PA_1G2MS', 'SLTR0110PA_1G2MS', 'SLTR0150PA_1G2MS',
+  'SLTR0090PB_1G2MS', 'SLTR0110PB_1G2MS', 'SLTR0150PB_1G2MS',
+  'IMF10HV00A_3M2', 'IMF11HV00A_3M2', 'IMF15HV00A_3M2', 'IMF16HV00A_3M2',
+  'SLXX26040001_xx',
+];
+const CAPA4_DEFAULT_MAP = {};
+CAPA4_MATTRESS_KEYS.forEach(k => { CAPA4_DEFAULT_MAP[k] = '매트리스'; });
+CAPA4_MOTION_KEYS.forEach(k => { CAPA4_DEFAULT_MAP[k] = '모션'; });
+CAPA4_TOPPER_KEYS.forEach(k => { CAPA4_DEFAULT_MAP[k] = '토퍼'; });
+
+// 품목코드_색상(row.key) → 4층 접착품목 여부
+// ("☆생산계획_작성용_파일_2026" 마지막 시트 F57 "접착품목" 행 수식에서 직접 추출)
+// =SUM(M4,M5:M6,M34:M37,M24:M33,M50:M54) → 4행, 5~6행, 24~33행, 34~37행, 50~54행
+// 매트리스 전체(4~6행) + 토퍼 중 SLMW·SLTU·SLTG·IMF*HV00A·SLXX 그룹만 포함(SLTR 그룹·모션은 제외)되는
+// 교차 분류라서 매트리스/모션/토퍼와 별도의 독립 그룹으로 관리(품목이 두 그룹에 동시에 속할 수 있음)
+const CAPA_GLUE_KEYS = [
+  'IMF11AB00A_9M3', 'IMS09AC09A_S5MT4', 'IMS11AC11A_S5MT4',
+  'SLMW0090A_5S3LS', 'SLMW0090B_5S3AS', 'SLMW0110A_5S3LS', 'SLMW0110B_5S3AS',
+  'SLMW0110HA_5S3LS', 'SLMW0110HB_5S3AS', 'SLMW0150A_5S3LS', 'SLMW0150B_5S3AS',
+  'SLMW0150HA_5S3LS', 'SLMW0150HB_5S3AS',
+  'SLTU0110R1_1G2S', 'SLTU0150R1_1G2S', 'SLTG0110B_1G2MS', 'SLTG0150B_1G2MS',
+  'IMF10HV00A_3M2', 'IMF11HV00A_3M2', 'IMF15HV00A_3M2', 'IMF16HV00A_3M2',
+  'SLXX26040001_xx',
+];
+const CAPA_GLUE_DEFAULT_MAP = {};
+CAPA_GLUE_KEYS.forEach(k => { CAPA_GLUE_DEFAULT_MAP[k] = '접착'; });
+
+// ===== CAPA 그룹 레지스트리 + 사용자 매핑 오버라이드(추가/삭제) =====
+// CAPA 매핑 관리 팝업에서 그룹별 라인 목록·기본 매핑을 공통으로 참조
+const CAPA_GROUPS = {
+  floor2: { label: '2층 CAPA (저가/고가)', lines: ['저', '고'], lineLabels: { 저: '저가', 고: '고가' }, defaultMap: CAPA2_DEFAULT_MAP },
+  floor4: { label: '4층 CAPA (모션/매트리스/토퍼)', lines: ['매트리스', '모션', '토퍼'], lineLabels: { 매트리스: '매트리스', 모션: '모션', 토퍼: '토퍼' }, defaultMap: CAPA4_DEFAULT_MAP },
+  glue: { label: '4층 접착품목', lines: ['접착'], lineLabels: { 접착: '접착' }, defaultMap: CAPA_GLUE_DEFAULT_MAP },
+};
+// 사용자가 추가/삭제/변경한 매핑은 이 브라우저의 localStorage에 저장해 새로고침 후에도 유지
+// override 값이 null이면 기본 매핑에서 해당 품목을 제외(삭제)한다는 의미
+const CAPA_OVERRIDES_STORAGE_KEY = 'capaMappingOverrides_v1';
+function loadCapaOverrides() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CAPA_OVERRIDES_STORAGE_KEY) || '{}');
+    return { floor2: parsed.floor2 || {}, floor4: parsed.floor4 || {}, glue: parsed.glue || {} };
+  } catch {
+    return { floor2: {}, floor4: {}, glue: {} };
+  }
+}
+function saveCapaOverrides() {
+  localStorage.setItem(CAPA_OVERRIDES_STORAGE_KEY, JSON.stringify(state.capaOverrides));
+}
+state.capaOverrides = loadCapaOverrides();
+
+// 기본 매핑 + 사용자 오버라이드를 합친 "현재 유효" 매핑({key: line})을 반환
+function getEffectiveCapaMap(groupKey) {
+  const group = CAPA_GROUPS[groupKey];
+  const overrides = state.capaOverrides[groupKey] || {};
+  const map = { ...group.defaultMap };
+  Object.entries(overrides).forEach(([k, line]) => {
+    if (line === null) delete map[k];
+    else map[k] = line;
+  });
+  return map;
+}
+
+// 일자별 저가/고가 라인 합계 + 전체 주간 목표생산량 합계(충수량) 계산
+function computeCapaSums() {
+  const lineMap = getEffectiveCapaMap('floor2');
+  const days = ['월', '화', '수', '목', '금'];
+  const sums = { 저: {}, 고: {} };
+  days.forEach(d => { sums.저[d] = 0; sums.고[d] = 0; });
+  let totalTarget = 0;
+  (state.planRows || []).forEach(row => {
+    totalTarget += row.targetQty || 0;
+    const line = lineMap[row.key];
+    if (!line) return;
+    days.forEach(d => { sums[line][d] += row.dayQty[d] || 0; });
+  });
+  return { sums, totalTarget };
+}
+
+// 메인 입력표: 저가 라인 일 200개 / 고가 라인 일 40개 초과 시, 그중 수량을 입력한(양수) 칸만 굵은 윤곽선 + 채우기색(저가=진한 주황, 고가=연한 붉은색)으로 표시
+function applyCapaOverlay() {
+  const lineMap = getEffectiveCapaMap('floor2');
+  const { sums } = computeCapaSums();
+  (state.planRows || []).forEach(row => {
+    const line = lineMap[row.key];
+    if (!line) return;
+    const tr = document.querySelector(`tr[data-key="${row.key}"]`);
+    if (!tr) return;
+    const threshold = CAPA_THRESHOLDS[line];
+    Object.entries(CAPA_DAY_COL_CLASS).forEach(([day, cls]) => {
+      const td = tr.querySelector(`.${cls}`);
+      if (!td) return;
+      const over = sums[line][day] > threshold && (row.dayQty[day] || 0) > 0;
+      td.classList.toggle('capa-over', over);
+      td.classList.toggle('capa-over-low', over && line === '저');
+      td.classList.toggle('capa-over-high', over && line === '고');
+    });
+  });
+}
+
+// 2층 CAPA 모달 내부 요약표 HTML
+function renderCapaSummaryHtml() {
+  if (!state.planRows || !state.planRows.length) {
+    return `<p style="color:var(--text3); font-size:12px; padding:8px 0;">먼저 메인 화면에서 <strong>계획표 생성</strong>을 실행해 주세요.</p>`;
+  }
+  const days = ['월', '화', '수', '목', '금'];
+  const { sums, totalTarget } = computeCapaSums();
+  const weekSum = line => days.reduce((s, d) => s + sums[line][d], 0);
+  const dayCell = line => days.map(d => {
+    const v = sums[line][d];
+    const over = v > CAPA_THRESHOLDS[line];
+    const cls = over ? (line === '저' ? 'capa-low-over' : 'capa-high-over') : '';
+    return `<td class="${cls}">${fmtNum(v)}</td>`;
+  }).join('');
+
+  return `
+    <table class="capa-table">
+      <thead><tr><th>구분</th>${days.map(d => `<th>${d}</th>`).join('')}<th>합계</th><th>CAPA 기준</th></tr></thead>
+      <tbody>
+        <tr><td>충수량<br><small style="font-weight:400;color:var(--text3);">(주간 목표생산량 합계)</small></td><td colspan="5">-</td><td>${fmtNum(totalTarget)}</td><td>1200개 수준</td></tr>
+        <tr><td>저가 라인</td>${dayCell('저')}<td>${fmtNum(weekSum('저'))}</td><td>일 200개 수준</td></tr>
+        <tr><td>고가 라인</td>${dayCell('고')}<td>${fmtNum(weekSum('고'))}</td><td>일 40개 수준</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ CAPA 기준: 4명 기준(저가 2명, 고가 2명) · 1. 스프링_매트리스_생산계획_2026 시트 기준 · 초과 시 메인 입력표에서도 해당 요일 칸이 붉게 표시됩니다. 매핑은 <strong>CAPA 매핑 관리</strong>에서 추가/삭제할 수 있습니다.</p>`;
+}
+
+function openCapaModal() {
+  document.getElementById('capa-modal-body').innerHTML = renderCapaSummaryHtml();
+  document.getElementById('capa-modal-overlay').style.display = 'flex';
+}
+function closeCapaModal() {
+  document.getElementById('capa-modal-overlay').style.display = 'none';
+}
+
+// 일자별 매트리스/모션/토퍼 라인 합계 계산 (4층은 CAPA 기준 색상 표기 없이 합계표만 제공)
+function computeCapa4Sums() {
+  const lineMap = getEffectiveCapaMap('floor4');
+  const days = ['월', '화', '수', '목', '금'];
+  const sums = { 매트리스: {}, 모션: {}, 토퍼: {} };
+  days.forEach(d => { sums.매트리스[d] = 0; sums.모션[d] = 0; sums.토퍼[d] = 0; });
+  (state.planRows || []).forEach(row => {
+    const line = lineMap[row.key];
+    if (!line) return;
+    days.forEach(d => { sums[line][d] += row.dayQty[d] || 0; });
+  });
+  return sums;
+}
+
+// 일자별 접착품목 합계 계산(매트리스·토퍼 일부와 겹치는 교차 분류라 별도 집계, 위 합계 행에는 포함하지 않음)
+function computeCapaGlueSums() {
+  const lineMap = getEffectiveCapaMap('glue');
+  const days = ['월', '화', '수', '목', '금'];
+  const sums = {};
+  days.forEach(d => { sums[d] = 0; });
+  (state.planRows || []).forEach(row => {
+    if (!lineMap[row.key]) return;
+    days.forEach(d => { sums[d] += row.dayQty[d] || 0; });
+  });
+  return sums;
+}
+
+// 4층 CAPA 모달 내부 요약표 HTML
+function renderCapa4SummaryHtml() {
+  if (!state.planRows || !state.planRows.length) {
+    return `<p style="color:var(--text3); font-size:12px; padding:8px 0;">먼저 메인 화면에서 <strong>계획표 생성</strong>을 실행해 주세요.</p>`;
+  }
+  const days = ['월', '화', '수', '목', '금'];
+  const sums = computeCapa4Sums();
+  const weekSum = line => days.reduce((s, d) => s + sums[line][d], 0);
+  const rowHtml = line => `<tr><td>${line}</td>${days.map(d => `<td>${fmtNum(sums[line][d])}</td>`).join('')}<td>${fmtNum(weekSum(line))}</td></tr>`;
+  const dayTotal = d => sums.매트리스[d] + sums.모션[d] + sums.토퍼[d];
+  const grandTotal = days.reduce((s, d) => s + dayTotal(d), 0);
+  const glueSums = computeCapaGlueSums();
+  const glueWeekSum = days.reduce((s, d) => s + glueSums[d], 0);
+
+  return `
+    <table class="capa-table">
+      <thead><tr><th>구분</th>${days.map(d => `<th>${d}</th>`).join('')}<th>합계</th></tr></thead>
+      <tbody>
+        ${rowHtml('매트리스')}
+        ${rowHtml('모션')}
+        ${rowHtml('토퍼')}
+        <tr style="font-weight:700;"><td>합계</td>${days.map(d => `<td>${fmtNum(dayTotal(d))}</td>`).join('')}<td>${fmtNum(grandTotal)}</td></tr>
+        <tr style="border-top:2px solid var(--border2);"><td>접착품목<br><small style="font-weight:400;color:var(--text3);">(매트리스·토퍼 일부와 중복, 합계 미포함)</small></td>${days.map(d => `<td>${fmtNum(glueSums[d])}</td>`).join('')}<td>${fmtNum(glueWeekSum)}</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ 분류: ☆생산계획_작성용_파일_2026 시트 기준(매트리스/모션/토퍼, 접착품목). 매핑은 <strong>CAPA 매핑 관리</strong>에서 추가/삭제할 수 있습니다.</p>`;
+}
+
+function openCapa4Modal() {
+  document.getElementById('capa4-modal-body').innerHTML = renderCapa4SummaryHtml();
+  document.getElementById('capa4-modal-overlay').style.display = 'flex';
+}
+function closeCapa4Modal() {
+  document.getElementById('capa4-modal-overlay').style.display = 'none';
+}
+
+// 메인 입력표 갱신(전체 렌더 / 칸 수정) 시마다 CAPA 초과 표시와 열려있는 CAPA 모달 내용을 함께 최신화
+function refreshCapaUI() {
+  applyCapaOverlay();
+  const overlay2 = document.getElementById('capa-modal-overlay');
+  if (overlay2 && overlay2.style.display !== 'none') {
+    document.getElementById('capa-modal-body').innerHTML = renderCapaSummaryHtml();
+  }
+  const overlay4 = document.getElementById('capa4-modal-overlay');
+  if (overlay4 && overlay4.style.display !== 'none') {
+    document.getElementById('capa4-modal-body').innerHTML = renderCapa4SummaryHtml();
+  }
+}
+
+// ===== CAPA 매핑 관리 팝업 (품목 추가/삭제/라인 변경) =====
+state.capaAdminTab = 'floor2';
+
+// 기본 매핑 + 오버라이드를 합쳐 화면에 표시할 목록 생성: 각 품목의 현재 라인과 상태(기본/수정됨/추가됨)
+function buildCapaEntryList(groupKey) {
+  const group = CAPA_GROUPS[groupKey];
+  const overrides = state.capaOverrides[groupKey] || {};
+  const entries = {};
+  Object.entries(group.defaultMap).forEach(([k, line]) => { entries[k] = { line, status: 'default' }; });
+  Object.entries(overrides).forEach(([k, line]) => {
+    if (line === null) delete entries[k];
+    else entries[k] = { line, status: group.defaultMap[k] !== undefined ? 'modified' : 'added' };
+  });
+  return Object.entries(entries)
+    .map(([key, info]) => ({ key, ...info }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function renderCapaAdminPanel(groupKey) {
+  const group = CAPA_GROUPS[groupKey];
+  const list = buildCapaEntryList(groupKey);
+  const lineOptions = current => group.lines.map(l => `<option value="${l}" ${l === current ? 'selected' : ''}>${group.lineLabels[l]}</option>`).join('');
+  const badgeHtml = status => status === 'default'
+    ? '<span class="capa-badge capa-badge-default">기본</span>'
+    : status === 'modified'
+      ? '<span class="capa-badge capa-badge-modified">수정됨</span>'
+      : '<span class="capa-badge capa-badge-added">추가됨</span>';
+
+  const rows = list.map(({ key, line, status }) => {
+    const sepIdx = key.indexOf('_');
+    const code = sepIdx >= 0 ? key.slice(0, sepIdx) : key;
+    const color = sepIdx >= 0 ? key.slice(sepIdx + 1) : '';
+    const canRevert = status !== 'default' && group.defaultMap[key] !== undefined;
+    return `<tr>
+      <td>${code}</td>
+      <td>${color}</td>
+      <td><select onchange="setCapaOverride('${groupKey}','${key}', this.value)">${lineOptions(line)}</select></td>
+      <td>${badgeHtml(status)}</td>
+      <td style="white-space:nowrap;">
+        ${canRevert ? `<button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="revertCapaEntry('${groupKey}','${key}')">↺ 되돌리기</button>` : ''}
+        <button class="btn btn-outline" style="padding:3px 8px;font-size:11px;color:var(--warn);" onclick="deleteCapaEntry('${groupKey}','${key}')">✕ 삭제</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:12px; flex-wrap:wrap;">
+      <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">품목코드</label>
+        <input type="text" id="capa-add-code-${groupKey}" placeholder="예: SLMC0090" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:140px;"></div>
+      <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">색상</label>
+        <input type="text" id="capa-add-color-${groupKey}" placeholder="예: 5N2" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:90px;"></div>
+      <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">라인</label>
+        <select id="capa-add-line-${groupKey}" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px;">
+          ${group.lines.map(l => `<option value="${l}">${group.lineLabels[l]}</option>`).join('')}
+        </select></div>
+      <button class="btn btn-primary" onclick="addCapaEntry('${groupKey}')">+ 추가</button>
+      <button class="btn btn-outline" style="margin-left:auto;" onclick="resetCapaGroup('${groupKey}')">전체 기본값으로 초기화</button>
+    </div>
+    <div class="table-wrap" style="max-height:360px;">
+      <table>
+        <thead><tr><th>품목코드</th><th>색상</th><th>라인</th><th>상태</th><th>작업</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" style="color:var(--text3);">등록된 품목이 없습니다.</td></tr>'}</tbody>
+      </table>
+    </div>
+    <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ 변경 사항은 이 브라우저(PC)에 자동 저장되며, 메인 입력표·CAPA 요약 화면에 바로 반영됩니다.</p>`;
+}
+
+function switchCapaAdminTab(groupKey) {
+  state.capaAdminTab = groupKey;
+  document.querySelectorAll('.capa-admin-tab').forEach(el => el.classList.toggle('active', el.dataset.group === groupKey));
+  document.getElementById('capa-admin-body').innerHTML = renderCapaAdminPanel(groupKey);
+}
+function openCapaAdminModal() {
+  switchCapaAdminTab(state.capaAdminTab || 'floor2');
+  document.getElementById('capa-admin-modal-overlay').style.display = 'flex';
+}
+function closeCapaAdminModal() {
+  document.getElementById('capa-admin-modal-overlay').style.display = 'none';
+}
+function addCapaEntry(groupKey) {
+  const codeEl = document.getElementById(`capa-add-code-${groupKey}`);
+  const colorEl = document.getElementById(`capa-add-color-${groupKey}`);
+  const lineEl = document.getElementById(`capa-add-line-${groupKey}`);
+  const code = codeEl.value.trim();
+  const color = colorEl.value.trim();
+  if (!code || !color) { alert('품목코드와 색상을 모두 입력해 주세요.'); return; }
+  setCapaOverride(groupKey, `${code}_${color}`, lineEl.value);
+  codeEl.value = '';
+  colorEl.value = '';
+  codeEl.focus();
+}
+function setCapaOverride(groupKey, key, line) {
+  if (!state.capaOverrides[groupKey]) state.capaOverrides[groupKey] = {};
+  state.capaOverrides[groupKey][key] = line;
+  saveCapaOverrides();
+  if (state.capaAdminTab === groupKey) document.getElementById('capa-admin-body').innerHTML = renderCapaAdminPanel(groupKey);
+  refreshCapaUI();
+}
+function deleteCapaEntry(groupKey, key) {
+  const group = CAPA_GROUPS[groupKey];
+  if (group.defaultMap[key] !== undefined) {
+    setCapaOverride(groupKey, key, null);
+  } else {
+    if (state.capaOverrides[groupKey]) delete state.capaOverrides[groupKey][key];
+    saveCapaOverrides();
+    document.getElementById('capa-admin-body').innerHTML = renderCapaAdminPanel(groupKey);
+    refreshCapaUI();
+  }
+}
+function revertCapaEntry(groupKey, key) {
+  if (state.capaOverrides[groupKey]) delete state.capaOverrides[groupKey][key];
+  saveCapaOverrides();
+  document.getElementById('capa-admin-body').innerHTML = renderCapaAdminPanel(groupKey);
+  refreshCapaUI();
+}
+function resetCapaGroup(groupKey) {
+  if (!confirm('이 그룹의 모든 사용자 수정사항을 기본값으로 초기화할까요?')) return;
+  state.capaOverrides[groupKey] = {};
+  saveCapaOverrides();
+  document.getElementById('capa-admin-body').innerHTML = renderCapaAdminPanel(groupKey);
+  refreshCapaUI();
+}
+
+// 품목코드_색상(row.key) → 블록 자재 분류 역매핑 (BLOCK_MAP에서 추출)
+const BLOCK_ITEM_TYPE = {};
+Object.entries(BLOCK_MAP).forEach(([blockType, sizes]) => {
+  Object.values(sizes).forEach(list => {
+    list.forEach(({ code }) => { BLOCK_ITEM_TYPE[code] = blockType; });
+  });
+});
+// 엘라스틱·테롤 22·스프링 엘라스틱 소요 품목은 기준일·기준일+1 생산 → 생산계획 입력 셀에 연한 노랑으로 표기
+// 레코텍·스프링 레코텍은 전주 목요일(기준일-5) 생산이라 이번 주 입력 칸과 무관 → 표기 없음
+const DATE_HINT_BLOCK_TYPES = ['엘라스틱', '테롤 22', '스프링 엘라스틱'];
+
+// 블록 UI 정의 (수정 가능한 추가 옵션 포함)
+const BLOCK_DEFS = {
+  '레코텍':       ['S','SS','Q'].map(s => ({ label: s, extra: 0, note: '' })),
+  '엘라스틱':     ['S','SS','Q'].map(s => ({ label: s, extra: 0, note: '' })),
+  '테롤 22':      ['S','SS','Q','K'].map(s => ({ label: s, extra: 0, note: '' })),
+  '스프링 레코텍': ['S','SS','Q','K','KK'].map(s => ({ label: s, extra: 0, note: '' })),
+  '스프링 엘라스틱': ['S','SS','Q','K'].map(s => ({ label: s, extra: 0, note: '' })),
+};
+
+function updateBlockCalc() {
+  renderBlockTable();
+}
+
+// 블록 자재별 생산 기준일에 맞춘 비고용 날짜: 레코텍·스프링 레코텍=기준일-5일, 그 외(엘라스틱·테롤 22·스프링 엘라스틱)=기준일+1일
+function getBlockNoteDate(blockType) {
+  if (!state.baseDate) return '';
+  const offsetDays = (blockType === '레코텍' || blockType === '스프링 레코텍') ? -5 : 1;
+  const d = new Date(state.baseDate.getTime() + offsetDays * 86400000);
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
+// 사용자가 직접 비고를 입력하지 않은 경우에만 자동 날짜로 채움(화면 표시/다운로드 직전 모두 호출)
+function autoFillBlockNotes() {
+  Object.keys(BLOCK_DEFS).forEach(blockType => {
+    const autoNote = getBlockNoteDate(blockType);
+    if (!autoNote) return;
+    BLOCK_DEFS[blockType].forEach(def => { if (!def.note) def.note = autoNote; });
+  });
+}
+
+// 품목코드별 주간 계획 합계 반환
+function getPlanTotalByKey(key) {
+  const row = state.planRows.find(r => r.key === key);
+  if (!row) return 0;
+  return Object.values(row.dayQty).reduce((s, v) => s + (v || 0), 0);
+}
+
+// 블록 소요량 계산: ROUNDUP(SUM(계획/PL단위), 0)
+function calcBlockRequired(blockType, sizeLabel) {
+  const mapping = BLOCK_MAP[blockType]?.[sizeLabel] || [];
+  let sum = 0;
+  mapping.forEach(({ code, pl }) => {
+    const qty = getPlanTotalByKey(code);
+    sum += qty / pl;
+  });
+  return Math.ceil(sum);
+}
+
+function renderBlockTable() {
+  let html = '';
+  const blockTypes = [
+    { key: '레코텍',       badge: 'badge-block', emoji: '🟫' },
+    { key: '엘라스틱',     badge: 'badge-latex', emoji: '🟪' },
+    { key: '테롤 22',      badge: 'badge-terol', emoji: '🟩' },
+    { key: '스프링 레코텍',   badge: 'badge-springblock',  emoji: '🟧' },
+    { key: '스프링 엘라스틱', badge: 'badge-springlatex',  emoji: '🟦' },
+  ];
+
+  autoFillBlockNotes();
+
+  blockTypes.forEach(bt => {
+    const defs = BLOCK_DEFS[bt.key];
+    let sectionTotal = 0;
+
+    const rows = defs.map((def, idx) => {
+      const required = calcBlockRequired(bt.key, def.label);
+      const extra = def.extra || 0;
+      const total = required + extra;
+      sectionTotal += total;
+
+      // 참조 품목 목록
+      const mapping = BLOCK_MAP[bt.key]?.[def.label] || [];
+      const refList = mapping.map(({ code, pl }) => {
+        const qty = getPlanTotalByKey(code);
+        const shortCode = code.split('_')[0];
+        return `<span title="${code} (PL:${pl}개)" style="color:${qty>0?'var(--accent)':'var(--text3)'}">${shortCode}${qty>0?`(${qty})`:''}</span>`;
+      }).join(' ');
+
+      return `<tr>
+        <td><strong>${def.label}</strong></td>
+        <td style="text-align:left; font-size:10px; line-height:1.6">${refList || '-'}</td>
+        <td class="${required > 0 ? 'pos-green' : ''}">${required > 0 ? fmtNum(required) : '-'}</td>
+        <td class="input-cell">
+          <input type="number" min="0" value="${extra}" style="width:50px"
+            onchange="updateBlockExtra('${bt.key}', ${idx}, this.value)">
+        </td>
+        <td><strong>${total > 0 ? fmtNum(total) : '-'}</strong></td>
+        <td class="input-cell">
+          <input type="text" value="${def.note||''}" style="width:90px; font-size:11px"
+            onchange="updateBlockNote('${bt.key}', ${idx}, this.value)" placeholder="비고">
+        </td>
+      </tr>`;
+    }).join('');
+
+    html += `<div class="block-section">
+      <div class="block-section-title">
+        <span>${bt.emoji} ${bt.key}</span>
+        <span style="font-size:12px; color:var(--text2)">합계: <strong>${fmtNum(sectionTotal)}</strong>개</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th style="width:40px">규격</th>
+          <th>참조 품목 (계획수량)</th>
+          <th>소요량</th>
+          <th>여유분</th>
+          <th>총계</th>
+          <th>비고</th>
+        </tr></thead><tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+  });
+
+  if (!state.planRows.length) {
+    html = `<div class="empty-state"><div class="icon">🧱</div><p>생산계획 입력 후 자동으로 계산됩니다.</p></div>`;
+  }
+  document.getElementById('block-content').innerHTML = html;
+}
+
+function updateBlockExtra(blockType, idx, val) {
+  BLOCK_DEFS[blockType][idx].extra = parseInt(val) || 0;
+  renderBlockTable();
+}
+
+function updateBlockNote(blockType, idx, val) {
+  BLOCK_DEFS[blockType][idx].note = val;
+}
+
+// ===== 다운로드: ERP 투입 파일 =====
+function downloadErpFile() {
+  if (!state.planRows.length) { alert('먼저 계획표를 생성하세요.'); return; }
+  const bd = state.baseDate;
+  const weekDates = [0,1,2,3,4].map(d => {
+    const dt = new Date(bd.getTime() + d * 86400000);
+    return dt;
+  });
+  const dayNames = ['월','화','수','목','금'];
+
+  const headers = ['품목코드(ITEM CODE)','색상(COLOR)','포장일(PACK DATE)','계획량 (PLAN QUANTITY)',
+    '포장라인코드(PACKING LINE CODE)','긴급(Urgent or not)','전달사항(Remarks)',
+    '건명(Subject)','박스여부(Box or Not)','수출여부(Whether to export)'];
+  const dataRows = [];
+
+  state.planRows.forEach(row => {
+    dayNames.forEach((d, i) => {
+      const qty = row.dayQty[d] || 0;
+      if (qty > 0) {
+        const packDate = weekDates[i];
+        const packDateNum = packDate.getFullYear() * 10000 + (packDate.getMonth()+1) * 100 + packDate.getDate();
+        dataRows.push([row.code, row.color, packDateNum, qty, row.lineCode, 'N', '', '', 'Y', 'N']);
+      }
+    });
+  });
+
+  // C열(포장일) 빠른 날짜순 정렬
+  dataRows.sort((a, b) => a[2] - b[2]);
+  const rows = [headers, ...dataRows];
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const weekLabel = document.getElementById('week-label').value || '생산계획';
+  XLSX.writeFile(wb, `ERP_생산계획_투입_${weekLabel}.xlsx`);
+}
+
+// ===== 다운로드: 작성용 파일 =====
+// 헤더: 품목코드, 색상, 기준전일 재고, 3개월의 월평균 판매수량, 행사량, 목표생산량, D-DAY, D+1, D+2, D+3, D+4, 포장라인
+// 실제로 수량을 입력한(목표생산량 또는 요일별 수량이 있는) 품목만 필터링, 합계열 없음
+function downloadPlanFile() {
+  if (!state.planRows.length) { alert('먼저 계획표를 생성하세요.'); return; }
+  const dayNames = ['월','화','수','목','금'];
+  const weekLabel = document.getElementById('week-label').value || '생산계획';
+
+  const headers = ['품목코드_색상', '품목코드', '색상', '기준전일 재고', '3개월의 월평균 판매수량', '행사량', '목표생산량',
+    'D-DAY', 'D+1', 'D+2', 'D+3', 'D+4', '포장라인'];
+  const rows = [headers];
+
+  state.planRows.forEach(row => {
+    const weekTotal = Object.values(row.dayQty).reduce((s,v) => s + (v||0), 0);
+    if (!(row.targetQty > 0 || weekTotal > 0)) return; // 입력한 품목만
+    rows.push([
+      `${row.code}_${row.color}`,
+      row.code,
+      row.color,
+      row.prevStock !== '' ? row.prevStock : '',
+      row.total3m || '',
+      row.eventFcst || '',
+      row.targetQty || '',
+      ...dayNames.map(d => row.dayQty[d] || ''),
+      state.LINE_CODES[row.lineCode] || row.lineCode || '',
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [
+    {wch:18},{wch:14},{wch:10},{wch:11},{wch:16},{wch:9},{wch:11},
+    {wch:8},{wch:8},{wch:8},{wch:8},{wch:8},{wch:14},
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, weekLabel);
+
+  // 2번째 시트: 복원 데이터 (이 파일을 재업로드하면 화면 전체 복원 가능)
+  const restoreWs = XLSX.utils.aoa_to_sheet(buildRestoreSheetData());
+  XLSX.utils.book_append_sheet(wb, restoreWs, '_복원데이터');
+
+  XLSX.writeFile(wb, `생산계획_작성용_${weekLabel}.xlsx`);
+}
+
+function buildRestoreSheetData() {
+  const baseDate = state.baseDate ? fmtDate(state.baseDate) : '';
+  const weekLabel = document.getElementById('week-label')?.value || '';
+  const dayLabels = ['월','화','수','목','금'];
+  const rows = [
+    ['__복원메타__', baseDate, weekLabel, Date.now(), Array.from(state.holidayDates).join(',')],
+    ['key','code','color','name','category','isManaged',
+     'prevStock','prev8Stock','stockDiff','stockMinusAvg',
+     'mulipSum','chuyeSum','total3m','weekAvg','eventFcst',
+     'stockType','useYn','grdColored','targetQty','lineCode','plUnit','statusMark',
+     'qty_월','qty_화','qty_수','qty_목','qty_금',
+     'date_월','date_화','date_수','date_목','date_금',
+     'fmt_월','fmt_화','fmt_수','fmt_목','fmt_금']
+  ];
+  state.planRows.forEach(r => {
+    const wd = r.weekDates || [];
+    rows.push([
+      r.key, r.code, r.color, r.name||'', r.category||'',
+      r.isManaged ? 'TRUE' : 'FALSE',
+      r.prevStock??'', r.prev8Stock??'', r.stockDiff??'', r.stockMinusAvg??'',
+      r.mulipSum||0, r.chuyeSum||0, r.total3m||0, r.weekAvg??'',
+      r.eventFcst||0, r.stockType||'', r.useYn||'',
+      r.grdColored ? 'TRUE' : 'FALSE',
+      r.targetQty||0, r.lineCode||'', r.plUnit||'', r.statusMark||'',
+      ...dayLabels.map(l => r.dayQty?.[l]||0),
+      ...dayLabels.map(l => { const d = wd.find(x => x.label===l); return d ? fmtDate(d.date) : ''; }),
+      ...dayLabels.map(l => { const d = wd.find(x => x.label===l); return d ? d.fmt : ''; })
+    ]);
+  });
+  return rows;
+}
+
+function downloadBlockTable() {
+  if (!state.planRows.length) { alert('먼저 계획표를 생성하세요.'); return; }
+  autoFillBlockNotes();
+  const blockTypes = ['레코텍', '엘라스틱', '테롤 22', '스프링 레코텍', '스프링 엘라스틱'];
+  const weekLabel = document.getElementById('week-label').value || '생산계획';
+  const rows = [['구분', '규격', '소요량', '여유분', '총계', '비고']];
+
+  blockTypes.forEach(bt => {
+    BLOCK_DEFS[bt].forEach(def => {
+      const required = calcBlockRequired(bt, def.label);
+      const extra = def.extra || 0;
+      const total = required + extra;
+      rows.push([bt, def.label, required || 0, extra || 0, total || 0, def.note || '']);
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '블록소요량');
+  XLSX.writeFile(wb, `블록소요량_${weekLabel}.xlsx`);
+}
+
+// ===== 유틸 =====
+function fmtDate(d) {
+  if (!d) return '';
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function parseNum(v) {
+  if (v === '' || v === null || v === undefined) return 0;
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+function fmtNum(v, dec=0) {
+  if (v === '' || v === null || v === undefined) return '';
+  const n = parseFloat(v);
+  if (isNaN(n)) return '';
+  return dec > 0 ? n.toFixed(dec) : Math.round(n).toLocaleString();
+}
+function setUploaded(btnId, nameId, filename) {
+  document.getElementById(btnId).classList.add('loaded');
+  document.getElementById(nameId).textContent = filename.length > 18 ? filename.slice(0,16)+'...' : filename;
+}
+
+// 숫자 입력칸: 포커스(첫 클릭)되면 기존 값을 비워서 바로 새 값을 입력할 수 있게 함
+// 원래 값은 dataset.orig에 보관해두고, 아무것도 입력하지 않은 채 빠져나가면 원래 값으로 복원
+document.body.addEventListener('focusin', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type === 'number') {
+    e.target.dataset.orig = e.target.value;
+    e.target.value = '';
+  }
+});
+
+// 스크립트로 값을 비웠을 뿐 사용자가 실제로 입력하지 않으면 브라우저는 'change'를 발생시키지 않는다
+// (스크립트로 .value를 바꾸는 것은 "사용자 입력"으로 간주되지 않음) → change가 아니라 focusout에서 직접 복원해야 함
+document.body.addEventListener('focusout', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type === 'number' && e.target.dataset.orig !== undefined) {
+    if (e.target.value === '') {
+      e.target.value = e.target.dataset.orig;
+    }
+    delete e.target.dataset.orig;
+  }
+});
+
+// 클릭 시: 숫자 입력칸이면 커서를 항상 텍스트 맨 끝으로, 그 외 일반 셀(td)이면 셀 안의 텍스트 전체 선택(코드/품명 복사 편의)
+document.body.addEventListener('click', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type === 'number') {
+    const len = e.target.value.length;
+    e.target.setSelectionRange(len, len);
+    return;
+  }
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  const td = e.target.closest('td');
+  if (!td) return;
+  const sel = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(td);
+  sel.removeAllRanges();
+  sel.addRange(range);
+});
+
+// 숫자 입력칸에서 방향키로 인접 입력칸으로 이동 (위/아래: 같은 열의 이전/다음 행, 왼쪽/오른쪽: 같은 행에서 가장 가까운 입력칸)
+document.body.addEventListener('keydown', e => {
+  if (e.target.tagName !== 'INPUT' || e.target.type !== 'number') return;
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  const td = e.target.closest('td');
+  const tr = td?.parentElement;
+  if (!td || !tr) return;
+
+  const focusInputIn = targetTd => {
+    const input = targetTd?.querySelector('input[type="number"]');
+    if (!input) return false;
+    e.preventDefault();
+    input.focus();
+    return true;
+  };
+
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    const targetTr = e.key === 'ArrowUp' ? tr.previousElementSibling : tr.nextElementSibling;
+    focusInputIn(targetTr?.cells[td.cellIndex]);
+  } else {
+    const cells = tr.cells;
+    const step = e.key === 'ArrowRight' ? 1 : -1;
+    for (let i = td.cellIndex + step; i >= 0 && i < cells.length; i += step) {
+      if (focusInputIn(cells[i])) break;
+    }
+  }
+});
+
+// 페이지 로드 시: localStorage에 저장된 전체 planRows가 있으면 즉시 화면 복원
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const savedStr = localStorage.getItem('planSaveData_v1');
+    if (!savedStr) return;
+    const saved = JSON.parse(savedStr);
+    if (saved.planRows && saved.planRows.length) {
+      tryRestoreFromLocalStorage();
+    } else if (saved.ts) {
+      updateSaveIndicator(new Date(saved.ts).toLocaleString('ko-KR'), true);
+    }
+  } catch {}
+});
+</script>
+</body>
+</html>
