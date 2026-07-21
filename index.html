@@ -962,12 +962,17 @@ function parseOrder(raw) {
 // ===== 판매예측 매핑(수동) =====
 // 판매예측 엑셀 파일은 시트마다 열 구성이 달라 고정 인덱스로 자동 인식이 불안정함
 // → 워크북 전체를 올린 뒤 항목별로 시트/코드열(단품코드·색상·단품코드+색상)/포함할 수량열을 직접 체크해서 매핑
+// 한 항목(헤더)에 여러 시트를 매핑할 수 있음(기본 2개, 추가/제거 가능) → 매핑 적용 시 시트별 결과를 코드(+색상) 기준으로 합산
 const SALES_METRICS = [
   { key: 'salesForecast', label: '판매예상수량', icon: '📈' },
   { key: 'properSupply',  label: '적정공급수량', icon: '📦' },
   { key: 'endStock',      label: '기말재고수량', icon: '🏬' },
 ];
-const salesUi = { salesForecast: { sheet: null }, properSupply: { sheet: null }, endStock: { sheet: null } };
+const salesUi = {
+  salesForecast: { slots: [{ sheet: null }, { sheet: null }] },
+  properSupply:  { slots: [{ sheet: null }, { sheet: null }] },
+  endStock:      { slots: [{ sheet: null }, { sheet: null }] },
+};
 
 function loadSalesWorkbook(input) {
   const file = input.files[0];
@@ -981,7 +986,9 @@ function loadSalesWorkbook(input) {
         sheets[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' });
       });
       state.salesWb = { sheetNames: wb.SheetNames, sheets };
-      SALES_METRICS.forEach(m => { salesUi[m.key].sheet = wb.SheetNames[0]; });
+      SALES_METRICS.forEach(m => {
+        salesUi[m.key].slots = [{ sheet: wb.SheetNames[0] }, { sheet: wb.SheetNames[0] }];
+      });
       setUploaded('btn-sales-raw', 'name-sales-raw', file.name);
       renderSalesMappingContent();
     } catch(err) { alert('판매예측 파일 읽기 오류: ' + err.message); }
@@ -1004,46 +1011,60 @@ function renderSalesMappingContent() {
 function renderSalesMetricBlock(metricKey) {
   const meta = SALES_METRICS.find(m => m.key === metricKey);
   const wb = state.salesWb;
-  if (!salesUi[metricKey].sheet || !wb.sheetNames.includes(salesUi[metricKey].sheet)) {
-    salesUi[metricKey].sheet = wb.sheetNames[0];
-  }
-  const sheetName = salesUi[metricKey].sheet;
-  const raw = wb.sheets[sheetName] || [];
-  const maxCols = raw.reduce((m, r) => Math.max(m, r.length), 0);
-  const previewRows = raw.slice(0, 15);
+  const ui = salesUi[metricKey];
+  ui.slots.forEach(slot => {
+    if (!slot.sheet || !wb.sheetNames.includes(slot.sheet)) slot.sheet = wb.sheetNames[0];
+  });
   const applied = state.salesMapping[metricKey];
 
   let html = `
     <div class="upload-panel" style="margin-bottom:16px;">
       <div class="upload-panel-title">${meta.icon} ${meta.label} 매핑
-        ${applied ? `<span style="color:var(--accent); font-size:11px; font-weight:600;">✅ 적용됨 (품목 ${Object.keys(applied.codeMap).length}개)</span>` : ''}
+        ${applied ? `<span style="color:var(--accent); font-size:11px; font-weight:600;">✅ 적용됨 (시트 ${applied.sheetCount}개 합산, 품목 ${Object.keys(applied.codeMap).length}개)</span>` : ''}
       </div>
-      <div class="settings-bar" style="margin-bottom:12px;">
-        <div class="settings-group">
-          <div class="settings-label">시트 선택</div>
-          <select class="settings-input" onchange="onSalesSheetChange('${metricKey}', this.value)">
-            ${wb.sheetNames.map(n => `<option value="${n}" ${n === sheetName ? 'selected' : ''}>${n}</option>`).join('')}
-          </select>
-        </div>
-        <div class="settings-group">
-          <div class="settings-label">데이터 시작 행</div>
-          <input type="number" min="1" value="2" id="sales-${metricKey}-start-row" class="settings-input" style="width:70px">
-          <span style="font-size:11px; color:var(--text3);">(미리보기에서 실제 데이터가 시작하는 행 번호)</span>
-        </div>
-        <div style="margin-left:auto;">
-          <button class="btn btn-primary" onclick="applySalesMapping('${metricKey}')">✅ 매핑 적용</button>
-        </div>
+      ${ui.slots.map((slot, slotIdx) => `<div id="sales-slot-${metricKey}-${slotIdx}">${renderSalesSlot(metricKey, slotIdx, slot)}</div>`).join('')}
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+        <button class="btn btn-outline" onclick="addSalesSlot('${metricKey}')" style="font-size:11px;">➕ 시트 추가</button>
+        <button class="btn btn-primary" onclick="applySalesMapping('${metricKey}')">✅ 매핑 적용 (시트 ${ui.slots.length}개 합산)</button>
       </div>
-      <div class="table-wrap"><table>
-        <thead><tr><th style="min-width:50px;">행</th>`;
+    </div>`;
+
+  return html;
+}
+
+function renderSalesSlot(metricKey, slotIdx, slot) {
+  const wb = state.salesWb;
+  const sheetName = slot.sheet;
+  const raw = wb.sheets[sheetName] || [];
+  const maxCols = raw.reduce((m, r) => Math.max(m, r.length), 0);
+  const previewRows = raw.slice(0, 15);
+  const prefix = `sales-${metricKey}-${slotIdx}`;
+  const ui = salesUi[metricKey];
+
+  let html = `
+    <div class="settings-bar" style="margin-bottom:8px;">
+      <div class="settings-group">
+        <div class="settings-label">시트 ${slotIdx + 1}</div>
+        <select class="settings-input" onchange="onSalesSheetChange('${metricKey}', ${slotIdx}, this.value)">
+          ${wb.sheetNames.map(n => `<option value="${n}" ${n === sheetName ? 'selected' : ''}>${n}</option>`).join('')}
+        </select>
+      </div>
+      <div class="settings-group">
+        <div class="settings-label">데이터 시작 행</div>
+        <input type="number" min="1" value="2" id="${prefix}-start-row" class="settings-input" style="width:70px">
+      </div>
+      ${ui.slots.length > 1 ? `<button class="btn btn-outline" onclick="removeSalesSlot('${metricKey}', ${slotIdx})" style="margin-left:auto; font-size:11px; color:var(--warn); border-color:#fecaca;">🗑️ 이 시트 제거</button>` : ''}
+    </div>
+    <div class="table-wrap" style="margin-bottom:12px;"><table>
+      <thead><tr><th style="min-width:50px;">행</th>`;
 
   for (let c = 0; c < maxCols; c++) {
     html += `<th style="min-width:100px;">
       <div style="font-size:10px; color:var(--text3); margin-bottom:2px;">${colLetter(c)}열</div>
-      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="radio" name="sales-${metricKey}-code-col" value="${c}"> 단품코드</label>
-      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="radio" name="sales-${metricKey}-color-col" value="${c}"> 색상</label>
-      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="radio" name="sales-${metricKey}-combo-col" value="${c}"> 단품코드+색상</label>
-      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="checkbox" class="sales-${metricKey}-amt-col" value="${c}"> 수량포함</label>
+      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="radio" name="${prefix}-code-col" value="${c}"> 단품코드</label>
+      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="radio" name="${prefix}-color-col" value="${c}"> 색상</label>
+      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="radio" name="${prefix}-combo-col" value="${c}"> 단품코드+색상</label>
+      <label style="display:flex; align-items:center; gap:3px; font-size:10px;"><input type="checkbox" class="${prefix}-amt-col" value="${c}"> 수량포함</label>
     </th>`;
   }
   html += `</tr></thead><tbody>`;
@@ -1058,67 +1079,89 @@ function renderSalesMetricBlock(metricKey) {
     html += `</tr>`;
   });
   html += `</tbody></table></div>
-    <p style="font-size:11px; color:var(--text3); margin-top:6px;">미리보기는 처음 15행만 표시합니다. 전체 ${raw.length}행 중 데이터 시작 행부터 끝까지 적용됩니다.
-    코드열은 단품코드 / 색상 / 단품코드+색상 중 해당하는 것만 체크하세요 (단품코드+색상 선택 시 그 열의 값을 "코드-색상" 형식으로 분리해 매칭합니다).</p>
-    </div>`;
+    <p style="font-size:11px; color:var(--text3); margin-top:-6px; margin-bottom:10px;">미리보기는 처음 15행만 표시합니다. 전체 ${raw.length}행 중 데이터 시작 행부터 끝까지 적용됩니다.
+    코드열은 단품코드 / 색상 / 단품코드+색상 중 해당하는 것만 체크하세요 (단품코드+색상 선택 시 그 열의 값을 "코드-색상" 형식으로 분리해 매칭합니다).</p>`;
 
   return html;
 }
 
-function onSalesSheetChange(metricKey, sheetName) {
-  salesUi[metricKey].sheet = sheetName;
+function onSalesSheetChange(metricKey, slotIdx, sheetName) {
+  salesUi[metricKey].slots[slotIdx].sheet = sheetName;
+  document.getElementById(`sales-slot-${metricKey}-${slotIdx}`).innerHTML =
+    renderSalesSlot(metricKey, slotIdx, salesUi[metricKey].slots[slotIdx]);
+}
+
+function addSalesSlot(metricKey) {
+  salesUi[metricKey].slots.push({ sheet: state.salesWb.sheetNames[0] });
   document.getElementById(`sales-metric-${metricKey}`).innerHTML = renderSalesMetricBlock(metricKey);
 }
 
+function removeSalesSlot(metricKey, slotIdx) {
+  const ui = salesUi[metricKey];
+  if (ui.slots.length <= 1) return;
+  ui.slots.splice(slotIdx, 1);
+  document.getElementById(`sales-metric-${metricKey}`).innerHTML = renderSalesMetricBlock(metricKey);
+}
+
+// 항목(헤더) 하나에 매핑된 여러 시트의 결과를 코드(+색상) 기준으로 전부 합산
 function applySalesMapping(metricKey) {
   const wb = state.salesWb;
   if (!wb) { alert('판매예측 파일을 먼저 업로드하세요.'); return; }
-  const sheetName = salesUi[metricKey].sheet;
-  const raw = wb.sheets[sheetName];
-  if (!raw || !raw.length) { alert('시트 데이터를 찾을 수 없습니다.'); return; }
-
-  const codeColEl = document.querySelector(`input[name="sales-${metricKey}-code-col"]:checked`);
-  const colorColEl = document.querySelector(`input[name="sales-${metricKey}-color-col"]:checked`);
-  const comboColEl = document.querySelector(`input[name="sales-${metricKey}-combo-col"]:checked`);
-  const comboCol = comboColEl ? Number(comboColEl.value) : -1;
-  const codeCol = codeColEl ? Number(codeColEl.value) : -1;
-  const colorCol = colorColEl ? Number(colorColEl.value) : -1;
-  if (comboCol < 0 && codeCol < 0) { alert('코드열(단품코드 또는 단품코드+색상)을 선택하세요.'); return; }
-
-  const amtCols = Array.from(document.querySelectorAll(`.sales-${metricKey}-amt-col:checked`)).map(el => Number(el.value));
-  if (!amtCols.length) { alert('합산할 수량 열을 1개 이상 체크하세요.'); return; }
-
-  const startRow = Math.max(1, parseInt(document.getElementById(`sales-${metricKey}-start-row`).value, 10) || 1);
+  const ui = salesUi[metricKey];
 
   const itemMap = {};
   const codeMap = {};
-  for (let i = startRow - 1; i < raw.length; i++) {
-    const row = raw[i] || [];
-    let code = '', color = '';
-    if (comboCol >= 0) {
-      const combo = String(row[comboCol] || '').trim();
-      const dashIdx = combo.indexOf('-');
-      code = (dashIdx >= 0 ? combo.slice(0, dashIdx) : combo).trim();
-      color = dashIdx >= 0 ? combo.slice(dashIdx + 1).trim() : '';
-    } else {
-      code = String(row[codeCol] || '').trim();
-      color = colorCol >= 0 ? String(row[colorCol] || '').trim() : '';
-    }
-    if (!code) continue;
-    const amount = amtCols.reduce((s, c) => s + parseNum(row[c]), 0);
-    if (color) {
-      const key = `${code}_${color}`;
-      itemMap[key] = (itemMap[key] || 0) + amount;
-    }
-    codeMap[code] = (codeMap[code] || 0) + amount;
-  }
+  let usedSheetCount = 0;
 
-  state.salesMapping[metricKey] = { itemMap, codeMap };
+  ui.slots.forEach((slot, slotIdx) => {
+    const raw = wb.sheets[slot.sheet];
+    if (!raw || !raw.length) return;
+    const prefix = `sales-${metricKey}-${slotIdx}`;
+
+    const codeColEl = document.querySelector(`input[name="${prefix}-code-col"]:checked`);
+    const colorColEl = document.querySelector(`input[name="${prefix}-color-col"]:checked`);
+    const comboColEl = document.querySelector(`input[name="${prefix}-combo-col"]:checked`);
+    const comboCol = comboColEl ? Number(comboColEl.value) : -1;
+    const codeCol = codeColEl ? Number(codeColEl.value) : -1;
+    const colorCol = colorColEl ? Number(colorColEl.value) : -1;
+    if (comboCol < 0 && codeCol < 0) return; // 이 시트는 코드열 미선택 → 건너뜀
+
+    const amtCols = Array.from(document.querySelectorAll(`.${prefix}-amt-col:checked`)).map(el => Number(el.value));
+    if (!amtCols.length) return; // 이 시트는 수량열 미선택 → 건너뜀
+
+    const startRow = Math.max(1, parseInt(document.getElementById(`${prefix}-start-row`)?.value, 10) || 1);
+    usedSheetCount++;
+
+    for (let i = startRow - 1; i < raw.length; i++) {
+      const row = raw[i] || [];
+      let code = '', color = '';
+      if (comboCol >= 0) {
+        const combo = String(row[comboCol] || '').trim();
+        const dashIdx = combo.indexOf('-');
+        code = (dashIdx >= 0 ? combo.slice(0, dashIdx) : combo).trim();
+        color = dashIdx >= 0 ? combo.slice(dashIdx + 1).trim() : '';
+      } else {
+        code = String(row[codeCol] || '').trim();
+        color = colorCol >= 0 ? String(row[colorCol] || '').trim() : '';
+      }
+      if (!code) continue;
+      const amount = amtCols.reduce((s, c) => s + parseNum(row[c]), 0);
+      if (color) {
+        const key = `${code}_${color}`;
+        itemMap[key] = (itemMap[key] || 0) + amount;
+      }
+      codeMap[code] = (codeMap[code] || 0) + amount;
+    }
+  });
+
+  if (!usedSheetCount) { alert('최소 한 개 시트에서 코드열과 수량열을 선택하세요.'); return; }
+
+  state.salesMapping[metricKey] = { itemMap, codeMap, sheetCount: usedSheetCount };
   state.planRows.forEach(row => {
     row[metricKey] = itemMap[row.key] ?? codeMap[row.code] ?? 0;
   });
   const meta = SALES_METRICS.find(m => m.key === metricKey);
-  alert(`${meta.label} 매핑 적용 완료 (품목 ${Object.keys(codeMap).length}개)`);
+  alert(`${meta.label} 매핑 적용 완료 (시트 ${usedSheetCount}개 합산, 품목 ${Object.keys(codeMap).length}개)`);
   document.getElementById(`sales-metric-${metricKey}`).innerHTML = renderSalesMetricBlock(metricKey);
   if (state.planRows.length) renderMainTable();
 }
