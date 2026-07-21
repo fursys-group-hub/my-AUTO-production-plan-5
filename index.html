@@ -185,10 +185,12 @@
 
   /* 품목명 열 드래그 리사이즈 핸들: 폭은 colgroup col-name이 결정 (전역 max-width:200px 제한 해제) */
   /* .col-resizer는 위치 표시용 막대일 뿐, 실제 드래그 판정은 th 우측 10px 전체에서 동작(JS) */
-  .freeze-table th.name-col-header { user-select: none; position: sticky; }
-  .freeze-table td.name-col { max-width: none; min-width: 0; }
-  /* 텍스트를 별도 block 자식으로 감싸야 table-layout:fixed에서도 글자 길이와 무관하게 열이 줄어듦 */
-  .name-col-text { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 전역 th/td padding(8px 10px / 6px 10px)은 텍스트가 없어도 열 최소폭을 강제하므로 이 열만 별도로 제거 */
+  .freeze-table th.name-col-header { user-select: none; position: sticky; padding: 8px 0; }
+  .freeze-table td.name-col { max-width: none; min-width: 0; padding: 6px 0; }
+  /* absolute로 빼서 일반 흐름에서 제외해야 table-layout:fixed에서 글자 길이와 무관하게 열이 3px까지도 줄어듦
+     (display:block+width:100%는 overflow:hidden을 걸어도 내용 텍스트가 최소폭을 강제하는 브라우저 동작이 있었음) */
+  .name-col-text { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 10px; }
   .col-resizer { position: absolute; right: 0; top: 0; height: 100%; width: 8px; z-index: 5; pointer-events: none; background: rgba(148,163,184,0.4); border-radius: 0 2px 2px 0; }
   .freeze-table th.name-col-header:hover .col-resizer { background: var(--primary); }
 
@@ -1417,12 +1419,14 @@ function updateMainFreezeLeft() {
 // 품목명 열 드래그 리사이즈
 // 시각 표시용 막대(.col-resizer)는 6px로 얇아서 정확히 못 맞히면 클릭이 전혀 안 먹는 문제가 있었음
 // → 실제 드래그 판정은 th 우측 끝에서 EDGE px 이내 마우스다운이면 항상 시작하도록 th 전체에 걸어 더 넓게 잡음
+// 품목명 열이 줄어든 만큼(글자가 안 보여도 최소 3px까지) 나머지 열들이 폭 비율대로 나눠 가져가 전체 표 폭은 유지됨
 function initNameColResizer() {
   const th = document.querySelector('.freeze-table thead th.name-col-header');
   const col = document.getElementById('col-name');
   if (!th || !col) return;
   const EDGE = 10;
   let startX = 0, startW = 0;
+  let otherCols = [], otherBaseWidths = [], totalOtherBase = 0;
 
   th.addEventListener('mousemove', e => {
     const rect = th.getBoundingClientRect();
@@ -1438,10 +1442,22 @@ function initNameColResizer() {
     startW = col.offsetWidth || state.nameColWidth;
     document.body.style.cursor = 'col-resize';
 
+    const colgroup = col.parentElement;
+    otherCols = Array.from(colgroup.children).filter(c => c !== col);
+    otherBaseWidths = otherCols.map(c => parseFloat(c.style.width) || c.offsetWidth || 0);
+    totalOtherBase = otherBaseWidths.reduce((s, w) => s + w, 0);
+
     function onMove(e) {
-      const newW = Math.max(5, startW + (e.clientX - startX));
+      const newW = Math.max(3, startW + (e.clientX - startX));
+      const delta = startW - newW; // 품목명이 줄어든 만큼(+) 나머지에 배분, 늘어난 만큼(-) 나머지에서 회수
       state.nameColWidth = newW;
       col.style.width = newW + 'px';
+      if (totalOtherBase > 0) {
+        otherCols.forEach((c, i) => {
+          const share = otherBaseWidths[i] / totalOtherBase;
+          c.style.width = Math.max(20, otherBaseWidths[i] + delta * share) + 'px';
+        });
+      }
       updateMainFreezeLeft();
     }
     function onUp() {
