@@ -188,9 +188,13 @@
   /* 전역 th/td padding(8px 10px / 6px 10px)은 텍스트가 없어도 열 최소폭을 강제하므로 이 열만 별도로 제거 */
   .freeze-table th.name-col-header { user-select: none; position: sticky; padding: 8px 0; }
   .freeze-table td.name-col { max-width: none; min-width: 0; padding: 6px 0; }
-  /* absolute로 빼서 일반 흐름에서 제외해야 table-layout:fixed에서 글자 길이와 무관하게 열이 3px까지도 줄어듦
-     (display:block+width:100%는 overflow:hidden을 걸어도 내용 텍스트가 최소폭을 강제하는 브라우저 동작이 있었음) */
-  .name-col-text { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 10px; }
+  /* 기본(일일 재고량 등 다른 표에서도 공용으로 씀): 안전한 block 방식 */
+  .name-col-text { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 메인 생산계획 표(.freeze-table)에서만 absolute로 빼서 일반 흐름에서 제외해야 table-layout:fixed에서 글자 길이와 무관하게 열이 3px까지도 줄어듦
+     (display:block+width:100%는 overflow:hidden을 걸어도 내용 텍스트가 최소폭을 강제하는 브라우저 동작이 있었음)
+     → th/td가 position:sticky라 absolute 기준점이 되므로 이 표 안에서만 안전함. 다른 표에 그대로 적용하면 sticky 부모가 없어 화면 전체 기준으로 좌표가 튐 */
+  .freeze-table th.name-col-header .name-col-text,
+  .freeze-table td.name-col .name-col-text { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); padding: 0 10px; }
   .col-resizer { position: absolute; right: 0; top: 0; height: 100%; width: 8px; z-index: 5; pointer-events: none; background: rgba(148,163,184,0.4); border-radius: 0 2px 2px 0; }
   .freeze-table th.name-col-header:hover .col-resizer { background: var(--primary); }
 
