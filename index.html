@@ -317,11 +317,11 @@
     <div class="capa-modal-header">
       <div class="capa-modal-title">🧱 블록 참조 품목 관리</div>
       <div style="display:flex; gap:6px;">
-        <button class="btn btn-outline" onclick="exportBlockMapOverrides()">📤 변경사항 내보내기</button>
+        <button class="btn btn-outline" onclick="exportBlockMapOverrides()">📤 백업 파일로 내보내기</button>
         <button class="btn btn-outline" onclick="closeBlockAdminModal()">✕ 닫기</button>
       </div>
     </div>
-    <p style="font-size:11px; color:var(--text3); margin:-6px 0 12px;">이 앱은 서버 없는 정적 사이트라 여기서 추가/수정한 내용은 이 브라우저(PC)에만 저장됩니다. 모든 사용자에게 영구 반영하려면 <strong>변경사항 내보내기</strong>로 받은 파일을 Claude에게 전달해 코드에 반영·배포해 달라고 요청하세요.</p>
+    <p style="font-size:11px; color:var(--text3); margin:-6px 0 12px;">여기서 추가·수정·삭제하는 내용은 서버(Cloudflare)에 즉시 저장되어 <strong>모든 사용자·기기에 자동으로 공유</strong>됩니다. "백업 파일로 내보내기"는 혹시 모를 백업용입니다.</p>
     <div class="capa-admin-tabs" id="block-admin-tabs"></div>
     <div id="block-admin-body"></div>
   </div>
@@ -2705,17 +2705,49 @@ function resetCapaGroup(groupKey) {
 }
 
 // ===== 블록 소요량 참조 품목 관리 (품목 추가/삭제/나누는 값 수정) =====
-// 사용자가 추가·수정한 참조 품목은 이 브라우저의 localStorage에 저장해 새로고침 후에도 유지
+// 사용자가 추가·수정한 참조 품목은 Cloudflare Worker(+KV)에 저장되어 모든 사용자·기기에 공유됨
+// (서버 저장 실패 시를 대비해 localStorage에도 캐시해두고, 그 값으로 즉시 화면을 띄움)
 // 구조: { [블록종류]: { [규격]: { "코드_색상": 나누는 값(숫자) | null } } }  (null = 기본 품목을 삭제했다는 의미)
 const BLOCK_MAP_OVERRIDES_STORAGE_KEY = 'blockMapOverrides_v1';
+const BLOCK_OVERRIDES_API = 'https://block-overrides-api.fursys-production-plan.workers.dev/';
+const BLOCK_OVERRIDES_WRITE_KEY = '4098a51f32a0979c5baa24e4f711bf1de44078795fd4b165';
 function loadBlockMapOverrides() {
   try { return JSON.parse(localStorage.getItem(BLOCK_MAP_OVERRIDES_STORAGE_KEY) || '{}'); }
   catch { return {}; }
 }
-function saveBlockMapOverrides() {
+function saveBlockMapOverridesLocal() {
   localStorage.setItem(BLOCK_MAP_OVERRIDES_STORAGE_KEY, JSON.stringify(state.blockMapOverrides));
 }
+async function saveBlockMapOverrides() {
+  saveBlockMapOverridesLocal();
+  try {
+    const res = await fetch(BLOCK_OVERRIDES_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Write-Key': BLOCK_OVERRIDES_WRITE_KEY },
+      body: JSON.stringify(state.blockMapOverrides),
+    });
+    if (!res.ok) throw new Error('status ' + res.status);
+  } catch (err) {
+    console.warn('블록 매핑 서버 저장 실패(이 브라우저에만 임시 저장됨):', err);
+    showAutoToast('⚠️ 서버 저장 실패 — 네트워크를 확인하세요 (이 브라우저에는 저장됨)', '#dc2626');
+  }
+}
+// 페이지를 열 때 / 관리 팝업을 열 때 서버 최신값으로 동기화 (다른 사람이 추가한 내용도 반영)
+async function syncBlockMapOverridesFromServer() {
+  try {
+    const res = await fetch(BLOCK_OVERRIDES_API);
+    if (!res.ok) throw new Error('status ' + res.status);
+    state.blockMapOverrides = await res.json();
+    saveBlockMapOverridesLocal();
+    rebuildBlockItemType();
+    if (document.getElementById('page-block')?.classList.contains('active') && state.planRows.length) renderBlockTable();
+    if (document.getElementById('block-admin-modal-overlay')?.style.display === 'flex') renderBlockAdminBody();
+  } catch (err) {
+    console.warn('블록 매핑 서버 동기화 실패(이 브라우저에 저장된 값 사용):', err);
+  }
+}
 state.blockMapOverrides = loadBlockMapOverrides();
+syncBlockMapOverridesFromServer();
 
 // 기본 BLOCK_MAP에 사용자 오버라이드(추가/수정/삭제)를 합친 "현재 유효" 참조 품목 목록
 function getEffectiveBlockMapping(blockType, sizeLabel) {
@@ -2967,6 +2999,7 @@ function openBlockAdminModal(blockType) {
   ).join('');
   document.getElementById('block-admin-modal-overlay').style.display = 'flex';
   renderBlockAdminBody();
+  syncBlockMapOverridesFromServer(); // 열 때마다 서버 최신값으로 갱신(다른 사람이 추가한 내용 포함)
 }
 function closeBlockAdminModal() {
   document.getElementById('block-admin-modal-overlay').style.display = 'none';

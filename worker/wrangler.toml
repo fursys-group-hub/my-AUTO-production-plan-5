@@ -1,0 +1,7 @@
+name = "block-overrides-api"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+kv_namespaces = [
+  { binding = "BLOCK_OVERRIDES", id = "f2e1bc92b0c1429b8317aedb9e1b6bff" }
+]
