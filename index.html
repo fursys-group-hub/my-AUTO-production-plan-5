@@ -281,7 +281,10 @@
   <div class="capa-modal">
     <div class="capa-modal-header">
       <div class="capa-modal-title">🏗️ 2층 CAPA (스프링 매트리스)</div>
-      <button class="btn btn-outline" onclick="closeCapaModal()">✕ 닫기</button>
+      <div style="display:flex; gap:6px;">
+        <button class="btn btn-outline" onclick="switchCapaFloorModal('capa4')">🏗️ 4층 CAPA 보기</button>
+        <button class="btn btn-outline" onclick="closeCapaModal()">✕ 닫기</button>
+      </div>
     </div>
     <div id="capa-modal-body"></div>
   </div>
@@ -292,7 +295,10 @@
   <div class="capa-modal">
     <div class="capa-modal-header">
       <div class="capa-modal-title">🏗️ 4층 CAPA (모션/매트리스/토퍼)</div>
-      <button class="btn btn-outline" onclick="closeCapa4Modal()">✕ 닫기</button>
+      <div style="display:flex; gap:6px;">
+        <button class="btn btn-outline" onclick="switchCapaFloorModal('capa2')">🏗️ 2층 CAPA 보기</button>
+        <button class="btn btn-outline" onclick="closeCapa4Modal()">✕ 닫기</button>
+      </div>
     </div>
     <div id="capa4-modal-body"></div>
   </div>
@@ -2786,6 +2792,13 @@ function openCapa4Modal() {
 }
 function closeCapa4Modal() {
   document.getElementById('capa4-modal-overlay').style.display = 'none';
+}
+// 2층 CAPA ↔ 4층 CAPA 모달을 서로 바로 전환 (모달이 화면 전체를 덮어 툴바 버튼을 누를 수 없었던 문제 해결)
+function switchCapaFloorModal(target) {
+  closeCapaModal();
+  closeCapa4Modal();
+  if (target === 'capa2') openCapaModal();
+  else openCapa4Modal();
 }
 
 // 메인 입력표 갱신(전체 렌더 / 칸 수정) 시마다 CAPA 초과 표시와 열려있는 CAPA 모달 내용을 함께 최신화
