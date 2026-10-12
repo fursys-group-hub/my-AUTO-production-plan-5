@@ -1284,11 +1284,17 @@ state.managedCodeFiles = loadManagedCodeFiles();
 recomputeManagedCodes();
 syncManagedCodeFilesFromServer();
 
+// JS 문자열 리터럴을 큰따옴표 HTML 속성(onclick="...") 안에 안전하게 넣기 위한 이스케이프
+// (JSON.stringify 결과 자체가 큰따옴표로 감싸져 있어, 그냥 넣으면 onclick="..." 속성이 중간에 끊어짐)
+function jsArgForAttr(value) {
+  return JSON.stringify(value).replace(/"/g, '&quot;');
+}
+
 function renderManagedCodeTabs() {
   const files = Object.keys(state.managedCodeFiles);
   const active = state.managedCodeTab;
   let html = files.map(name =>
-    `<div class="capa-admin-tab ${name === active ? 'active' : ''}" onclick="switchManagedCodeTab(${JSON.stringify(name)})">${name} (${(state.managedCodeFiles[name] || []).length})</div>`
+    `<div class="capa-admin-tab ${name === active ? 'active' : ''}" onclick="switchManagedCodeTab(${jsArgForAttr(name)})">${name} (${(state.managedCodeFiles[name] || []).length})</div>`
   ).join('');
   html += `<div class="capa-admin-tab" style="color:var(--primary);" onclick="addManagedCodeFile()">➕ 새 목록</div>`;
   document.getElementById('managed-code-tabs').innerHTML = html;
@@ -1301,7 +1307,7 @@ function renderManagedCodeBody() {
     return;
   }
   const codes = (state.managedCodeFiles[fileName] || []).slice().sort();
-  const codeChips = codes.map(c => `<span style="display:inline-flex; align-items:center; gap:4px; border:1px solid var(--border2); border-radius:12px; padding:3px 8px; margin:3px; font-size:12px;">${c}<span style="cursor:pointer; color:var(--warn); font-weight:700;" onclick="deleteManagedCode(${JSON.stringify(fileName)}, ${JSON.stringify(c)})">✕</span></span>`).join('');
+  const codeChips = codes.map(c => `<span style="display:inline-flex; align-items:center; gap:4px; border:1px solid var(--border2); border-radius:12px; padding:3px 8px; margin:3px; font-size:12px;">${c}<span style="cursor:pointer; color:var(--warn); font-weight:700;" onclick="deleteManagedCode(${jsArgForAttr(fileName)}, ${jsArgForAttr(c)})">✕</span></span>`).join('');
 
   document.getElementById('managed-code-body').innerHTML = `
     <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
