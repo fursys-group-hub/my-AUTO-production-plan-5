@@ -3247,7 +3247,7 @@ function renderBlockTable() {
       const refList = mapping.map(({ code, pl }) => {
         const qty = getPlanTotalByKey(code);
         const shortCode = code.split('_')[0];
-        return `<span class="block-ref-code" onclick="copyCodeCell('${code}')" title="${code} (나누는 값: ${pl}) · 클릭하여 코드 복사" style="color:${qty>0?'var(--accent)':'var(--text3)'};">${shortCode}${qty>0?`(${qty})`:''}</span>`;
+        return `<span class="block-ref-code" onclick="copyCodeCell('${shortCode}')" title="${code} (나누는 값: ${pl}) · 클릭하여 단품코드 복사" style="color:${qty>0?'var(--accent)':'var(--text3)'};">${shortCode}${qty>0?`(${qty})`:''}</span>`;
       }).join(' ') || '-';
 
       return `<tr>
