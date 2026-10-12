@@ -3,7 +3,7 @@
 // KV에 JSON 하나를 통째로 저장/조회만 함 (쓰기는 X-Write-Key 헤더로만 허용).
 const ALLOWED_ORIGIN = 'https://fursys-group-hub.github.io';
 // 허용된 키만 읽기/쓰기 가능 (임의의 키로 KV를 채우는 것을 방지)
-const ALLOWED_KEYS = new Set(['blockMapOverrides', 'capaOverrides', 'managedCodeFiles']);
+const ALLOWED_KEYS = new Set(['blockMapOverrides', 'capaOverrides', 'managedCodeFiles', 'managedCodeFileEnabled']);
 const DEFAULT_KEY = 'blockMapOverrides'; // 루트 경로("/")는 기존 블록 매핑 API와 호환 유지
 
 function corsHeaders(origin) {

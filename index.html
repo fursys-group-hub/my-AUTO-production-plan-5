@@ -151,6 +151,12 @@
   .capa-admin-tab { padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; user-select: none; }
   .capa-admin-tab:hover { color: var(--primary); }
   .capa-admin-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  /* 관리 품목 코드 목록: 탭 안에 적용/적용취소 체크박스 포함 */
+  .capa-admin-tab.managed-code-tab { display: flex; align-items: center; gap: 5px; }
+  .capa-admin-tab.managed-code-tab.disabled { opacity: 0.45; }
+  .capa-admin-tab.managed-code-tab.disabled:hover { opacity: 0.7; }
+  .managed-code-tab-switch { cursor: pointer; display: flex; align-items: center; }
+  .managed-code-tab-switch input { cursor: pointer; }
   .capa-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 700; white-space: nowrap; }
   .capa-badge-default { background: #f1f5f9; color: var(--text2); }
   .capa-badge-modified { background: #dbeafe; color: #1d4ed8; }
@@ -1252,22 +1258,74 @@ async function syncManagedCodeFilesFromServer() {
     console.warn('관리 품목 코드 서버 동기화 실패(이 브라우저에 저장된 값 사용):', err);
   }
 }
-// 모든 목록(파일)의 코드를 합쳐 state.managedCodes(중복 제거)로 재계산 + 상단 요약 표시 갱신
+// 목록(파일)별 "적용/적용취소" 여부 — 꺼둔 목록의 코드는 전체 관리품목 필터에서 제외됨
+// (목록 자체는 삭제하지 않고 그대로 두되, 필터 적용 여부만 켜고 끌 수 있음)
+const MANAGED_CODE_ENABLED_STORAGE_KEY = 'managedCodeFileEnabled_v1';
+const MANAGED_CODE_ENABLED_API = 'https://block-overrides-api.fursys-production-plan.workers.dev/managedCodeFileEnabled';
+function loadManagedCodeFileEnabled() {
+  try { return JSON.parse(localStorage.getItem(MANAGED_CODE_ENABLED_STORAGE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveManagedCodeFileEnabledLocal() {
+  localStorage.setItem(MANAGED_CODE_ENABLED_STORAGE_KEY, JSON.stringify(state.managedCodeFileEnabled));
+}
+async function saveManagedCodeFileEnabled() {
+  saveManagedCodeFileEnabledLocal();
+  recomputeManagedCodes();
+  try {
+    const res = await fetch(MANAGED_CODE_ENABLED_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Write-Key': BLOCK_OVERRIDES_WRITE_KEY },
+      body: JSON.stringify(state.managedCodeFileEnabled),
+    });
+    if (!res.ok) throw new Error('status ' + res.status);
+  } catch (err) {
+    console.warn('관리 품목 코드 적용 상태 서버 저장 실패(이 브라우저에만 임시 저장됨):', err);
+    showAutoToast('⚠️ 서버 저장 실패 — 네트워크를 확인하세요 (이 브라우저에는 저장됨)', '#dc2626');
+  }
+}
+async function syncManagedCodeFileEnabledFromServer() {
+  try {
+    const res = await fetch(MANAGED_CODE_ENABLED_API);
+    if (!res.ok) throw new Error('status ' + res.status);
+    state.managedCodeFileEnabled = await res.json();
+    saveManagedCodeFileEnabledLocal();
+    recomputeManagedCodes();
+    if (document.getElementById('managed-code-modal-overlay')?.style.display === 'flex') renderManagedCodeTabs();
+  } catch (err) {
+    console.warn('관리 품목 코드 적용 상태 서버 동기화 실패(이 브라우저에 저장된 값 사용):', err);
+  }
+}
+// 목록이 꺼져있는지(비적용) 여부 — 기록이 없으면 기본값은 켜짐(적용)
+function isManagedFileEnabled(name) {
+  return state.managedCodeFileEnabled[name] !== false;
+}
+function toggleManagedCodeFileEnabled(name) {
+  state.managedCodeFileEnabled[name] = !isManagedFileEnabled(name);
+  saveManagedCodeFileEnabled();
+  renderManagedCodeTabs();
+}
+
+// 적용 중(켜진) 목록의 코드만 합쳐 state.managedCodes(중복 제거)로 재계산 + 상단 요약 표시 갱신
 function recomputeManagedCodes() {
   const set = new Set();
-  Object.values(state.managedCodeFiles).forEach(list => (list || []).forEach(c => set.add(c)));
+  Object.entries(state.managedCodeFiles).forEach(([name, list]) => {
+    if (!isManagedFileEnabled(name)) return;
+    (list || []).forEach(c => set.add(c));
+  });
   state.managedCodes = Array.from(set);
   const btn = document.getElementById('btn-codes');
   const nameEl = document.getElementById('name-codes');
   const bar = document.getElementById('managed-bar');
   const countEl = document.getElementById('managed-count');
   const fileCount = Object.keys(state.managedCodeFiles).length;
+  const enabledCount = Object.keys(state.managedCodeFiles).filter(isManagedFileEnabled).length;
   if (nameEl) nameEl.textContent = fileCount > 0 ? `관리 (${state.managedCodes.length}개)` : '관리...';
   if (btn) btn.classList.toggle('loaded', fileCount > 0);
   if (bar && countEl) {
     if (state.managedCodes.length > 0) {
       bar.style.display = 'flex';
-      countEl.textContent = `${state.managedCodes.length}개 (목록 ${fileCount}개)`;
+      countEl.textContent = `${state.managedCodes.length}개 (적용 ${enabledCount}/${fileCount}개 목록)`;
     } else {
       bar.style.display = 'none';
     }
@@ -1281,8 +1339,10 @@ function recomputeManagedCodes() {
   if (state.grdData && document.getElementById('page-stock')?.classList.contains('active')) renderStockTable();
 }
 state.managedCodeFiles = loadManagedCodeFiles();
+state.managedCodeFileEnabled = loadManagedCodeFileEnabled();
 recomputeManagedCodes();
 syncManagedCodeFilesFromServer();
+syncManagedCodeFileEnabledFromServer();
 
 // JS 문자열 리터럴을 큰따옴표 HTML 속성(onclick="...") 안에 안전하게 넣기 위한 이스케이프
 // (JSON.stringify 결과 자체가 큰따옴표로 감싸져 있어, 그냥 넣으면 onclick="..." 속성이 중간에 끊어짐)
@@ -1293,9 +1353,15 @@ function jsArgForAttr(value) {
 function renderManagedCodeTabs() {
   const files = Object.keys(state.managedCodeFiles);
   const active = state.managedCodeTab;
-  let html = files.map(name =>
-    `<div class="capa-admin-tab ${name === active ? 'active' : ''}" onclick="switchManagedCodeTab(${jsArgForAttr(name)})">${name} (${(state.managedCodeFiles[name] || []).length})</div>`
-  ).join('');
+  let html = files.map(name => {
+    const enabled = isManagedFileEnabled(name);
+    return `<div class="capa-admin-tab managed-code-tab ${name === active ? 'active' : ''} ${enabled ? '' : 'disabled'}">
+      <label class="managed-code-tab-switch" title="${enabled ? '적용 중 · 클릭하면 적용 취소' : '적용 취소됨 · 클릭하면 적용'}">
+        <input type="checkbox" ${enabled ? 'checked' : ''} onchange="toggleManagedCodeFileEnabled(${jsArgForAttr(name)})">
+      </label>
+      <span onclick="switchManagedCodeTab(${jsArgForAttr(name)})">${name} (${(state.managedCodeFiles[name] || []).length})</span>
+    </div>`;
+  }).join('');
   html += `<div class="capa-admin-tab" style="color:var(--primary);" onclick="addManagedCodeFile()">➕ 새 목록</div>`;
   document.getElementById('managed-code-tabs').innerHTML = html;
 }
@@ -1321,7 +1387,7 @@ function renderManagedCodeBody() {
     <div style="min-height:60px; border:1px solid var(--border); border-radius:6px; padding:8px; background:var(--surface2);">
       ${codeChips || '<span style="color:var(--text3); font-size:12px;">등록된 코드가 없습니다.</span>'}
     </div>
-    <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ 모든 목록의 코드를 합친 것이 "관리 품목"이 되어 메인 화면 표시·"관리품목만" 필터에 쓰입니다.</p>`;
+    <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ 탭 왼쪽 체크박스로 목록별 적용/적용취소가 가능합니다. <strong>적용 중인 목록의 코드만</strong> 합쳐져 "관리 품목"이 되고 메인 화면 표시·"관리품목만" 필터에 쓰입니다.</p>`;
 }
 
 function switchManagedCodeTab(name) {
@@ -1336,6 +1402,7 @@ function openManagedCodeModal() {
   renderManagedCodeTabs();
   renderManagedCodeBody();
   syncManagedCodeFilesFromServer();
+  syncManagedCodeFileEnabledFromServer();
 }
 function closeManagedCodeModal() {
   document.getElementById('managed-code-modal-overlay').style.display = 'none';
@@ -1347,8 +1414,10 @@ function addManagedCodeFile() {
   if (!trimmed) return;
   if (state.managedCodeFiles[trimmed]) { alert('이미 있는 이름입니다.'); return; }
   state.managedCodeFiles[trimmed] = [];
+  state.managedCodeFileEnabled[trimmed] = true;
   state.managedCodeTab = trimmed;
   saveManagedCodeFiles();
+  saveManagedCodeFileEnabled();
   renderManagedCodeTabs();
   renderManagedCodeBody();
 }
@@ -1357,8 +1426,10 @@ function deleteManagedCodeFile() {
   if (!fileName) return;
   if (!confirm(`"${fileName}" 목록을 전체 삭제할까요? (코드 ${state.managedCodeFiles[fileName]?.length || 0}개)`)) return;
   delete state.managedCodeFiles[fileName];
+  delete state.managedCodeFileEnabled[fileName];
   state.managedCodeTab = Object.keys(state.managedCodeFiles)[0] || null;
   saveManagedCodeFiles();
+  saveManagedCodeFileEnabled();
   renderManagedCodeTabs();
   renderManagedCodeBody();
 }
