@@ -330,6 +330,19 @@
   </div>
 </div>
 
+<!-- 관리 품목 코드 관리 모달 -->
+<div id="managed-code-modal-overlay" class="capa-modal-overlay" style="display:none;" onclick="if(event.target===this) closeManagedCodeModal()">
+  <div class="capa-modal capa-admin-modal">
+    <div class="capa-modal-header">
+      <div class="capa-modal-title">🔵 관리 품목 코드 관리</div>
+      <button class="btn btn-outline" onclick="closeManagedCodeModal()">✕ 닫기</button>
+    </div>
+    <p style="font-size:11px; color:var(--text3); margin:-6px 0 12px;">담당자별로 목록(파일)을 나눠 관리할 수 있습니다. 여기서 추가·삭제하는 내용은 서버에 즉시 저장되어 모든 사용자·기기에 자동으로 공유됩니다.</p>
+    <div class="capa-admin-tabs" id="managed-code-tabs"></div>
+    <div id="managed-code-body"></div>
+  </div>
+</div>
+
 <!-- 네비게이션 -->
 <nav class="nav">
   <div class="nav-title">📋 생산계획</div>
@@ -362,11 +375,10 @@
         <input type="file" id="input-order" accept=".xls,.xlsx" onchange="loadOrder(this)">
       </div>
       <div class="upload-item">
-        <div class="upload-label">관리 품목 코드 (txt)</div>
-        <label class="upload-btn" id="btn-codes" onclick="document.getElementById('input-codes').click()">
-          <span class="icon">📝</span> <span id="name-codes">파일 선택...</span>
+        <div class="upload-label">관리 품목 코드</div>
+        <label class="upload-btn" id="btn-codes" onclick="openManagedCodeModal()">
+          <span class="icon">📝</span> <span id="name-codes">관리...</span>
         </label>
-        <input type="file" id="input-codes" accept=".txt" onchange="loadCodes(this)">
       </div>
       <div class="upload-item">
         <div class="upload-label">계획 복원 (작성용 파일)</div>
@@ -1189,20 +1201,193 @@ function applySalesMapping(metricKey) {
   if (state.planRows.length) renderMainTable();
 }
 
-// ===== 관리 품목 코드 로드 =====
-function loadCodes(input) {
+// ===== 관리 품목 코드 관리 (담당자별 목록/파일, 서버 공유) =====
+// 구조: { [목록 이름]: ["코드1", "코드2", ...] } — 담당자별로 목록을 나눠 추가/삭제 가능
+// 서버(Cloudflare Worker+KV)에 저장되어 모든 사용자·기기에 공유됨 (localStorage는 오프라인 대비 캐시)
+const MANAGED_CODE_FILES_STORAGE_KEY = 'managedCodeFiles_v1';
+const MANAGED_CODE_FILES_API = 'https://block-overrides-api.fursys-production-plan.workers.dev/managedCodeFiles';
+function loadManagedCodeFiles() {
+  try { return JSON.parse(localStorage.getItem(MANAGED_CODE_FILES_STORAGE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveManagedCodeFilesLocal() {
+  localStorage.setItem(MANAGED_CODE_FILES_STORAGE_KEY, JSON.stringify(state.managedCodeFiles));
+}
+async function saveManagedCodeFiles() {
+  saveManagedCodeFilesLocal();
+  recomputeManagedCodes();
+  try {
+    const res = await fetch(MANAGED_CODE_FILES_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Write-Key': BLOCK_OVERRIDES_WRITE_KEY },
+      body: JSON.stringify(state.managedCodeFiles),
+    });
+    if (!res.ok) throw new Error('status ' + res.status);
+  } catch (err) {
+    console.warn('관리 품목 코드 서버 저장 실패(이 브라우저에만 임시 저장됨):', err);
+    showAutoToast('⚠️ 서버 저장 실패 — 네트워크를 확인하세요 (이 브라우저에는 저장됨)', '#dc2626');
+  }
+}
+async function syncManagedCodeFilesFromServer() {
+  try {
+    const res = await fetch(MANAGED_CODE_FILES_API);
+    if (!res.ok) throw new Error('status ' + res.status);
+    state.managedCodeFiles = await res.json();
+    saveManagedCodeFilesLocal();
+    recomputeManagedCodes();
+    if (document.getElementById('managed-code-modal-overlay')?.style.display === 'flex') {
+      if (!state.managedCodeTab || !state.managedCodeFiles[state.managedCodeTab]) {
+        state.managedCodeTab = Object.keys(state.managedCodeFiles)[0] || null;
+      }
+      renderManagedCodeTabs();
+      renderManagedCodeBody();
+    }
+  } catch (err) {
+    console.warn('관리 품목 코드 서버 동기화 실패(이 브라우저에 저장된 값 사용):', err);
+  }
+}
+// 모든 목록(파일)의 코드를 합쳐 state.managedCodes(중복 제거)로 재계산 + 상단 요약 표시 갱신
+function recomputeManagedCodes() {
+  const set = new Set();
+  Object.values(state.managedCodeFiles).forEach(list => (list || []).forEach(c => set.add(c)));
+  state.managedCodes = Array.from(set);
+  const btn = document.getElementById('btn-codes');
+  const nameEl = document.getElementById('name-codes');
+  const bar = document.getElementById('managed-bar');
+  const countEl = document.getElementById('managed-count');
+  const fileCount = Object.keys(state.managedCodeFiles).length;
+  if (nameEl) nameEl.textContent = fileCount > 0 ? `관리 (${state.managedCodes.length}개)` : '관리...';
+  if (btn) btn.classList.toggle('loaded', fileCount > 0);
+  if (bar && countEl) {
+    if (state.managedCodes.length > 0) {
+      bar.style.display = 'flex';
+      countEl.textContent = `${state.managedCodes.length}개 (목록 ${fileCount}개)`;
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+  // 메인 표는 isManaged를 품목별로 미리 계산해 캐시해두므로, 목록이 바뀌면 다시 계산해줘야 즉시 반영됨
+  if (state.planRows?.length) {
+    state.planRows.forEach(row => { row.isManaged = state.managedCodes.includes(row.code); });
+    if (document.getElementById('page-main')?.classList.contains('active')) renderMainTable();
+  }
+  if (state.orderData && document.getElementById('page-order')?.classList.contains('active')) renderOrderTable();
+  if (state.grdData && document.getElementById('page-stock')?.classList.contains('active')) renderStockTable();
+}
+state.managedCodeFiles = loadManagedCodeFiles();
+recomputeManagedCodes();
+syncManagedCodeFilesFromServer();
+
+function renderManagedCodeTabs() {
+  const files = Object.keys(state.managedCodeFiles);
+  const active = state.managedCodeTab;
+  let html = files.map(name =>
+    `<div class="capa-admin-tab ${name === active ? 'active' : ''}" onclick="switchManagedCodeTab(${JSON.stringify(name)})">${name} (${(state.managedCodeFiles[name] || []).length})</div>`
+  ).join('');
+  html += `<div class="capa-admin-tab" style="color:var(--primary);" onclick="addManagedCodeFile()">➕ 새 목록</div>`;
+  document.getElementById('managed-code-tabs').innerHTML = html;
+}
+
+function renderManagedCodeBody() {
+  const fileName = state.managedCodeTab;
+  if (!fileName) {
+    document.getElementById('managed-code-body').innerHTML = `<div class="empty-state"><div class="icon">📝</div><p>오른쪽 위 "➕ 새 목록"으로 담당자별 목록을 먼저 만들어 주세요.</p></div>`;
+    return;
+  }
+  const codes = (state.managedCodeFiles[fileName] || []).slice().sort();
+  const codeChips = codes.map(c => `<span style="display:inline-flex; align-items:center; gap:4px; border:1px solid var(--border2); border-radius:12px; padding:3px 8px; margin:3px; font-size:12px;">${c}<span style="cursor:pointer; color:var(--warn); font-weight:700;" onclick="deleteManagedCode(${JSON.stringify(fileName)}, ${JSON.stringify(c)})">✕</span></span>`).join('');
+
+  document.getElementById('managed-code-body').innerHTML = `
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+      <input type="text" id="managed-code-add-input" placeholder="코드 입력 후 Enter 또는 추가" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:160px;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addManagedCode();}">
+      <button class="btn btn-primary" onclick="addManagedCode()">+ 추가</button>
+      <label class="btn btn-outline" style="cursor:pointer;">📂 txt 파일로 추가
+        <input type="file" accept=".txt" style="display:none" onchange="importManagedCodesFromTxt(this)">
+      </label>
+      <button class="btn btn-outline" style="margin-left:auto; color:var(--warn); border-color:#fecaca;" onclick="deleteManagedCodeFile()">🗑️ 이 목록 전체 삭제</button>
+    </div>
+    <div style="min-height:60px; border:1px solid var(--border); border-radius:6px; padding:8px; background:var(--surface2);">
+      ${codeChips || '<span style="color:var(--text3); font-size:12px;">등록된 코드가 없습니다.</span>'}
+    </div>
+    <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ 모든 목록의 코드를 합친 것이 "관리 품목"이 되어 메인 화면 표시·"관리품목만" 필터에 쓰입니다.</p>`;
+}
+
+function switchManagedCodeTab(name) {
+  state.managedCodeTab = name;
+  renderManagedCodeTabs();
+  renderManagedCodeBody();
+}
+function openManagedCodeModal() {
+  const files = Object.keys(state.managedCodeFiles);
+  if (!state.managedCodeTab || !files.includes(state.managedCodeTab)) state.managedCodeTab = files[0] || null;
+  document.getElementById('managed-code-modal-overlay').style.display = 'flex';
+  renderManagedCodeTabs();
+  renderManagedCodeBody();
+  syncManagedCodeFilesFromServer();
+}
+function closeManagedCodeModal() {
+  document.getElementById('managed-code-modal-overlay').style.display = 'none';
+}
+function addManagedCodeFile() {
+  const name = prompt('새 목록 이름을 입력하세요 (예: 담당자 이름)');
+  if (!name) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  if (state.managedCodeFiles[trimmed]) { alert('이미 있는 이름입니다.'); return; }
+  state.managedCodeFiles[trimmed] = [];
+  state.managedCodeTab = trimmed;
+  saveManagedCodeFiles();
+  renderManagedCodeTabs();
+  renderManagedCodeBody();
+}
+function deleteManagedCodeFile() {
+  const fileName = state.managedCodeTab;
+  if (!fileName) return;
+  if (!confirm(`"${fileName}" 목록을 전체 삭제할까요? (코드 ${state.managedCodeFiles[fileName]?.length || 0}개)`)) return;
+  delete state.managedCodeFiles[fileName];
+  state.managedCodeTab = Object.keys(state.managedCodeFiles)[0] || null;
+  saveManagedCodeFiles();
+  renderManagedCodeTabs();
+  renderManagedCodeBody();
+}
+function addManagedCode() {
+  const fileName = state.managedCodeTab;
+  if (!fileName) { alert('먼저 목록을 선택하거나 새로 만들어 주세요.'); return; }
+  const input = document.getElementById('managed-code-add-input');
+  const code = input.value.trim();
+  if (!code) return;
+  if (!state.managedCodeFiles[fileName].includes(code)) state.managedCodeFiles[fileName].push(code);
+  input.value = '';
+  input.focus();
+  saveManagedCodeFiles();
+  renderManagedCodeTabs();
+  renderManagedCodeBody();
+}
+function deleteManagedCode(fileName, code) {
+  if (!state.managedCodeFiles[fileName]) return;
+  state.managedCodeFiles[fileName] = state.managedCodeFiles[fileName].filter(c => c !== code);
+  saveManagedCodeFiles();
+  renderManagedCodeTabs();
+  renderManagedCodeBody();
+}
+function importManagedCodesFromTxt(input) {
   const file = input.files[0];
   if (!file) return;
+  const fileName = state.managedCodeTab;
+  if (!fileName) { alert('먼저 목록을 선택하거나 새로 만들어 주세요.'); return; }
   const reader = new FileReader();
   reader.onload = e => {
     const lines = e.target.result.split('\n').map(l => l.trim()).filter(Boolean);
-    state.managedCodes = lines;
-    setUploaded('btn-codes', 'name-codes', file.name);
-    document.getElementById('managed-bar').style.display = 'flex';
-    document.getElementById('managed-count').textContent = `${lines.length}개 로드됨`;
-    console.log('관리품목:', lines.length, '개');
+    const existing = new Set(state.managedCodeFiles[fileName]);
+    lines.forEach(l => existing.add(l));
+    state.managedCodeFiles[fileName] = Array.from(existing);
+    saveManagedCodeFiles();
+    renderManagedCodeTabs();
+    renderManagedCodeBody();
+    alert(`${lines.length}개 코드를 "${fileName}" 목록에 추가했습니다 (중복 제외).`);
   };
   reader.readAsText(file, 'utf-8');
+  input.value = '';
 }
 
 // ===== 메인 계획표 생성 =====
@@ -2408,9 +2593,11 @@ const CAPA_GROUPS = {
   floor4: { label: '4층 CAPA (모션/매트리스/토퍼)', lines: ['매트리스', '모션', '토퍼'], lineLabels: { 매트리스: '매트리스', 모션: '모션', 토퍼: '토퍼' }, defaultMap: CAPA4_DEFAULT_MAP },
   glue: { label: '4층 접착품목', lines: ['접착'], lineLabels: { 접착: '접착' }, defaultMap: CAPA_GLUE_DEFAULT_MAP },
 };
-// 사용자가 추가/삭제/변경한 매핑은 이 브라우저의 localStorage에 저장해 새로고침 후에도 유지
+// 사용자가 추가/삭제/변경한 매핑은 서버(Cloudflare Worker+KV)에 저장되어 모든 사용자·기기에 공유됨
+// (서버 저장 실패 시를 대비해 localStorage에도 캐시해두고, 그 값으로 즉시 화면을 띄움)
 // override 값이 null이면 기본 매핑에서 해당 품목을 제외(삭제)한다는 의미
 const CAPA_OVERRIDES_STORAGE_KEY = 'capaMappingOverrides_v1';
+const CAPA_OVERRIDES_API = 'https://block-overrides-api.fursys-production-plan.workers.dev/capaOverrides';
 function loadCapaOverrides() {
   try {
     const parsed = JSON.parse(localStorage.getItem(CAPA_OVERRIDES_STORAGE_KEY) || '{}');
@@ -2419,10 +2606,40 @@ function loadCapaOverrides() {
     return { floor2: {}, floor4: {}, glue: {} };
   }
 }
-function saveCapaOverrides() {
+function saveCapaOverridesLocal() {
   localStorage.setItem(CAPA_OVERRIDES_STORAGE_KEY, JSON.stringify(state.capaOverrides));
 }
+async function saveCapaOverrides() {
+  saveCapaOverridesLocal();
+  try {
+    const res = await fetch(CAPA_OVERRIDES_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Write-Key': BLOCK_OVERRIDES_WRITE_KEY },
+      body: JSON.stringify(state.capaOverrides),
+    });
+    if (!res.ok) throw new Error('status ' + res.status);
+  } catch (err) {
+    console.warn('CAPA 매핑 서버 저장 실패(이 브라우저에만 임시 저장됨):', err);
+    showAutoToast('⚠️ 서버 저장 실패 — 네트워크를 확인하세요 (이 브라우저에는 저장됨)', '#dc2626');
+  }
+}
+async function syncCapaOverridesFromServer() {
+  try {
+    const res = await fetch(CAPA_OVERRIDES_API);
+    if (!res.ok) throw new Error('status ' + res.status);
+    const parsed = await res.json();
+    state.capaOverrides = { floor2: parsed.floor2 || {}, floor4: parsed.floor4 || {}, glue: parsed.glue || {} };
+    saveCapaOverridesLocal();
+    refreshCapaUI();
+    if (document.getElementById('capa-admin-modal-overlay')?.style.display === 'flex') {
+      document.getElementById('capa-admin-body').innerHTML = renderCapaAdminPanel(state.capaAdminTab);
+    }
+  } catch (err) {
+    console.warn('CAPA 매핑 서버 동기화 실패(이 브라우저에 저장된 값 사용):', err);
+  }
+}
 state.capaOverrides = loadCapaOverrides();
+syncCapaOverridesFromServer();
 
 // 기본 매핑 + 사용자 오버라이드를 합친 "현재 유효" 매핑({key: line})을 반환
 function getEffectiveCapaMap(groupKey) {
@@ -2659,6 +2876,7 @@ function switchCapaAdminTab(groupKey) {
 function openCapaAdminModal() {
   switchCapaAdminTab(state.capaAdminTab || 'floor2');
   document.getElementById('capa-admin-modal-overlay').style.display = 'flex';
+  syncCapaOverridesFromServer(); // 열 때마다 서버 최신값으로 갱신(다른 사람이 변경한 내용 포함)
 }
 function closeCapaAdminModal() {
   document.getElementById('capa-admin-modal-overlay').style.display = 'none';
