@@ -3662,6 +3662,13 @@ document.body.addEventListener('keydown', e => {
   }
 });
 
+// 숫자 입력칸에 포커스된 상태로 마우스 휠을 돌리면 브라우저가 값을 증감시키는 동작을 막음
+// (포커스를 바로 풀어서, 휠은 평소처럼 페이지/표 스크롤만 하고 입력값은 바뀌지 않게 함)
+document.addEventListener('wheel', e => {
+  const el = document.activeElement;
+  if (el && el.tagName === 'INPUT' && el.type === 'number') el.blur();
+}, { passive: true });
+
 // 페이지 로드 시: localStorage에 저장된 전체 planRows가 있으면 즉시 화면 복원
 document.addEventListener('DOMContentLoaded', () => {
   try {
