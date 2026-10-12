@@ -241,6 +241,8 @@
 
   /* 공휴일로 지정된 요일 입력 열: 진한 검은색 배경 + 붉은 테두리 (헤더 클릭으로 토글) */
   th.day-header-holiday { background: #555555 !important; color: #fff !important; border: 2px solid var(--warn) !important; cursor: pointer; }
+  /* 클릭해서 켜고 끄는 헤더 필터(목표생산량/포장라인)가 활성화됐을 때 표시 */
+  th.th-filter-active { background: var(--primary) !important; color: #fff !important; }
   td.holiday-col { background: #d9d9d9 !important; border: 2px solid var(--warn) !important; }
   td.holiday-col input { background: #d9d9d9 !important; color: var(--text) !important; border-color: var(--warn) !important; }
 
@@ -353,6 +355,17 @@
     <p style="font-size:11px; color:var(--text3); margin:-6px 0 12px;">담당자별로 목록(파일)을 나눠 관리할 수 있습니다. 여기서 추가·삭제하는 내용은 서버에 즉시 저장되어 모든 사용자·기기에 자동으로 공유됩니다.</p>
     <div class="capa-admin-tabs" id="managed-code-tabs"></div>
     <div id="managed-code-body"></div>
+  </div>
+</div>
+
+<!-- 포장라인 필터 모달 -->
+<div id="line-filter-modal-overlay" class="capa-modal-overlay" style="display:none;" onclick="if(event.target===this) closeLineFilterModal()">
+  <div class="capa-modal" style="width:380px;">
+    <div class="capa-modal-header">
+      <div class="capa-modal-title">📦 포장라인 필터</div>
+      <button class="btn btn-outline" onclick="closeLineFilterModal()">✕ 닫기</button>
+    </div>
+    <div id="line-filter-body"></div>
   </div>
 </div>
 
@@ -607,9 +620,10 @@ const state = {
   nameColWidth: 180,   // 품목명 열 가로 폭(px) - 사용자 드래그로 조절
   showOrderName: true,
   showStockName: true,
-  filterModes: new Set(), // 복수 선택 가능한 필터(예: 'managed','neg') - 비어있으면 전체
+  filterModes: new Set(), // 복수 선택 가능한 필터(예: 'managed','neg','targetPositive') - 비어있으면 전체
   orderFilterModes: new Set(), // 일일 수주량 탭 필터
   stockFilterModes: new Set(), // 일일 재고량 탭 필터
+  lineFilterSet: new Set(), // 포장라인 필터(선택된 라인코드들) - 비어있으면 전체
   LINE_CODES: {
     '100000': '포장1(스프링)',
     '100001': '판조립 반제품',
@@ -1642,7 +1656,7 @@ function renderMainTable() {
         <th rowspan="2">판매<br>예상수량</th>
         <th rowspan="2">적정<br>공급수량</th>
         <th rowspan="2">기말<br>재고수량</th>
-        <th rowspan="2">목표<br>생산량</th>
+        <th rowspan="2" class="${state.filterModes.has('targetPositive') ? 'th-filter-active' : ''}" style="cursor:pointer;" onclick="toggleFilter('targetPositive')" title="클릭하면 목표생산량이 0보다 큰 행만 표시 (다시 클릭하면 해제)">목표<br>생산량</th>
         ${weekDates.map(d => {
           const dstr = fmtDate(d.date);
           const isHoliday = isHolidayDate(dstr);
@@ -1652,7 +1666,7 @@ function renderMainTable() {
         <th rowspan="2">합계</th>
         <th rowspan="2">검증</th>
         <th rowspan="2">P/L<br>단위</th>
-        <th rowspan="2">포장라인</th>
+        <th rowspan="2" class="${state.lineFilterSet.size > 0 ? 'th-filter-active' : ''}" style="cursor:pointer;" onclick="openLineFilterModal()" title="클릭하여 포장라인 필터 설정">포장라인${state.lineFilterSet.size > 0 ? ` (${state.lineFilterSet.size})` : ''}</th>
       </tr>
     </thead>
     <tbody>`;
@@ -2069,6 +2083,8 @@ function getFilteredRows() {
   if (q) rows = rows.filter(r => r.code.toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q));
   if (state.filterModes.has('managed')) rows = rows.filter(r => r.isManaged);
   if (state.filterModes.has('neg')) rows = rows.filter(r => r.prev8Stock < 0 || r.prevStock < 0 || r.stockMinusAvg < 0);
+  if (state.filterModes.has('targetPositive')) rows = rows.filter(r => r.targetQty > 0);
+  if (state.lineFilterSet.size > 0) rows = rows.filter(r => state.lineFilterSet.has(r.lineCode));
   return rows;
 }
 
@@ -2084,14 +2100,55 @@ function toggleFilter(mode) {
 
 function clearFilters() {
   state.filterModes.clear();
+  state.lineFilterSet.clear();
   updateFilterButtons();
   renderMainTable();
 }
 
 function updateFilterButtons() {
-  document.getElementById('filter-all').classList.toggle('active', state.filterModes.size === 0);
+  document.getElementById('filter-all').classList.toggle('active', state.filterModes.size === 0 && state.lineFilterSet.size === 0);
   document.getElementById('filter-managed').classList.toggle('active', state.filterModes.has('managed'));
   document.getElementById('filter-neg').classList.toggle('active', state.filterModes.has('neg'));
+}
+
+// ===== 포장라인 필터 팝업 =====
+function renderLineFilterBody() {
+  const rows = Object.entries(state.LINE_CODES).map(([code, label]) => `
+    <label style="display:flex; align-items:center; gap:8px; padding:6px 4px; cursor:pointer; font-size:13px;">
+      <input type="checkbox" style="width:16px; height:16px; cursor:pointer;" ${state.lineFilterSet.has(code) ? 'checked' : ''} onchange="toggleLineFilterCode('${code}')">
+      <span>${label} <span style="color:var(--text3); font-size:11px;">(${code})</span></span>
+    </label>`).join('');
+
+  document.getElementById('line-filter-body').innerHTML = `
+    <div style="display:flex; gap:8px; margin-bottom:10px;">
+      <button class="btn btn-outline" style="font-size:11px; padding:5px 10px;" onclick="selectAllLineFilter()">전체 선택</button>
+      <button class="btn btn-outline" style="font-size:11px; padding:5px 10px;" onclick="clearLineFilter()">필터 끄기(전체 표시)</button>
+    </div>
+    <div style="max-height:320px; overflow:auto;">${rows}</div>
+    <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ 체크한 포장라인만 표시됩니다(하나도 선택 안 하면 전체 표시). 검색·관리품목 필터와 겹쳐서 함께 적용됩니다.</p>`;
+}
+function openLineFilterModal() {
+  document.getElementById('line-filter-modal-overlay').style.display = 'flex';
+  renderLineFilterBody();
+}
+function closeLineFilterModal() {
+  document.getElementById('line-filter-modal-overlay').style.display = 'none';
+}
+function toggleLineFilterCode(code) {
+  if (state.lineFilterSet.has(code)) state.lineFilterSet.delete(code);
+  else state.lineFilterSet.add(code);
+  renderLineFilterBody();
+  renderMainTable();
+}
+function selectAllLineFilter() {
+  state.lineFilterSet = new Set(Object.keys(state.LINE_CODES));
+  renderLineFilterBody();
+  renderMainTable();
+}
+function clearLineFilter() {
+  state.lineFilterSet.clear();
+  renderLineFilterBody();
+  renderMainTable();
 }
 
 function toggleNameCol() {
