@@ -443,6 +443,7 @@
     <div style="display:flex; gap:8px;">
       <button class="btn btn-primary" onclick="updateBlockCalc()">🔄 업데이트</button>
       <button class="btn btn-outline" onclick="openBlockAdminModal()">+ 항목 추가</button>
+      <button class="btn btn-outline" onclick="toggleBlockDetailView()" id="block-detail-toggle">📋 기존/추가 품목 펼치기</button>
       <button class="btn btn-success" onclick="downloadBlockTable()">⬇️ 블록 현황 다운로드</button>
     </div>
   </div>
@@ -2711,6 +2712,7 @@ function saveBlockMapOverrides() {
   localStorage.setItem(BLOCK_MAP_OVERRIDES_STORAGE_KEY, JSON.stringify(state.blockMapOverrides));
 }
 state.blockMapOverrides = loadBlockMapOverrides();
+state.blockDetailExpanded = false; // 참조 품목 목록을 기존/추가로 나눠 펼쳐 보여줄지 여부
 
 // 기본 BLOCK_MAP + 사용자 추가 항목을 합친 "현재 유효" 참조 품목 목록
 function getEffectiveBlockMapping(blockType, sizeLabel) {
@@ -2752,6 +2754,14 @@ const BLOCK_DEFS = {
 
 function updateBlockCalc() {
   renderBlockTable();
+}
+
+// 참조 품목 목록을 "기존/추가"로 나눠 펼쳐 보여줄지 토글
+function toggleBlockDetailView() {
+  state.blockDetailExpanded = !state.blockDetailExpanded;
+  const btn = document.getElementById('block-detail-toggle');
+  if (btn) btn.textContent = state.blockDetailExpanded ? '📋 간략히 보기' : '📋 기존/추가 품목 펼치기';
+  if (state.planRows.length) renderBlockTable();
 }
 
 // 블록 자재별 생산 기준일에 맞춘 비고용 날짜: 레코텍·스프링 레코텍=기준일-5일, 그 외(엘라스틱·테롤 22·스프링 엘라스틱)=기준일+1일
@@ -2813,13 +2823,22 @@ function renderBlockTable() {
 
       // 참조 품목 목록 (기본 + 사용자 추가 항목). 추가 항목은 파란 테두리로 표시하고 클릭하면 삭제
       const mapping = getEffectiveBlockMapping(bt.key, def.label);
-      const refList = mapping.map(({ code, pl, added }) => {
+      const toSpan = ({ code, pl, added }) => {
         const qty = getPlanTotalByKey(code);
         const shortCode = code.split('_')[0];
         const addedStyle = added ? 'border:1px solid var(--managed); border-radius:3px; padding:0 3px; cursor:pointer;' : '';
-        const addedAttr = added ? `onclick="deleteBlockMapEntry('${bt.key}','${def.label}','${code}')" title="${code} (PL:${pl}개) · 사용자 추가 항목, 클릭 시 삭제"` : `title="${code} (PL:${pl}개)"`;
+        const addedAttr = added ? `onclick="deleteBlockMapEntry('${bt.key}','${def.label}','${code}')" title="${code} (PL:${pl}) · 사용자 추가 항목, 클릭 시 삭제"` : `title="${code} (PL:${pl})"`;
         return `<span ${addedAttr} style="color:${qty>0?'var(--accent)':'var(--text3)'}; ${addedStyle}">${shortCode}${qty>0?`(${qty})`:''}${added?' ✕':''}</span>`;
-      }).join(' ');
+      };
+      let refList;
+      if (state.blockDetailExpanded) {
+        const defaultItems = mapping.filter(m => !m.added);
+        const addedItems = mapping.filter(m => m.added);
+        refList = `<div style="margin-bottom:3px;"><strong style="color:var(--text2);">기존(${defaultItems.length}):</strong> ${defaultItems.map(toSpan).join(' ') || '-'}</div>
+          <div><strong style="color:var(--managed);">추가(${addedItems.length}):</strong> ${addedItems.map(toSpan).join(' ') || '-'}</div>`;
+      } else {
+        refList = mapping.map(toSpan).join(' ') || '-';
+      }
 
       return `<tr>
         <td><strong>${def.label}</strong></td>
@@ -2906,7 +2925,7 @@ function renderBlockAdminPanel() {
       <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">색상</label>
         <input type="text" id="block-add-color" placeholder="예: 5S3LS" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:90px;"></div>
       <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">PL단위</label>
-        <input type="number" min="1" id="block-add-pl" placeholder="예: 15" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:70px;"></div>
+        <input type="number" min="0.01" step="0.01" id="block-add-pl" placeholder="예: 15 또는 7.5" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:90px;"></div>
       <button class="btn btn-primary" onclick="addBlockMapEntry()">+ 추가</button>
     </div>
     <div class="table-wrap" style="max-height:320px;">
@@ -2933,9 +2952,9 @@ function addBlockMapEntry() {
   const sizeLabel = document.getElementById('block-add-size').value;
   const code = document.getElementById('block-add-code').value.trim();
   const color = document.getElementById('block-add-color').value.trim();
-  const pl = parseInt(document.getElementById('block-add-pl').value, 10);
+  const pl = parseFloat(document.getElementById('block-add-pl').value);
   if (!code || !color) { alert('품목코드와 색상을 모두 입력해 주세요.'); return; }
-  if (!pl || pl <= 0) { alert('PL단위를 1 이상의 숫자로 입력해 주세요.'); return; }
+  if (!pl || pl <= 0) { alert('PL단위(나누는 값)를 0보다 큰 숫자로 입력해 주세요. 소수점도 가능합니다.'); return; }
   const key = `${code}_${color}`;
   if (!state.blockMapOverrides[blockType]) state.blockMapOverrides[blockType] = {};
   if (!state.blockMapOverrides[blockType][sizeLabel]) state.blockMapOverrides[blockType][sizeLabel] = {};
