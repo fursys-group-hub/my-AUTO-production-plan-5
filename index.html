@@ -311,6 +311,17 @@
   </div>
 </div>
 
+<!-- 블록 소요량 참조 품목 관리 모달 -->
+<div id="block-admin-modal-overlay" class="capa-modal-overlay" style="display:none;" onclick="if(event.target===this) closeBlockAdminModal()">
+  <div class="capa-modal capa-admin-modal">
+    <div class="capa-modal-header">
+      <div class="capa-modal-title">🧱 블록 참조 품목 관리</div>
+      <button class="btn btn-outline" onclick="closeBlockAdminModal()">✕ 닫기</button>
+    </div>
+    <div id="block-admin-body"></div>
+  </div>
+</div>
+
 <!-- 네비게이션 -->
 <nav class="nav">
   <div class="nav-title">📋 생산계획</div>
@@ -431,7 +442,7 @@
     </div>
     <div style="display:flex; gap:8px;">
       <button class="btn btn-primary" onclick="updateBlockCalc()">🔄 업데이트</button>
-      <button class="btn btn-outline" onclick="addBlockItem()">+ 항목 추가</button>
+      <button class="btn btn-outline" onclick="openBlockAdminModal()">+ 항목 추가</button>
       <button class="btn btn-success" onclick="downloadBlockTable()">⬇️ 블록 현황 다운로드</button>
     </div>
   </div>
@@ -2688,13 +2699,44 @@ function resetCapaGroup(groupKey) {
   refreshCapaUI();
 }
 
-// 품목코드_색상(row.key) → 블록 자재 분류 역매핑 (BLOCK_MAP에서 추출)
-const BLOCK_ITEM_TYPE = {};
-Object.entries(BLOCK_MAP).forEach(([blockType, sizes]) => {
-  Object.values(sizes).forEach(list => {
-    list.forEach(({ code }) => { BLOCK_ITEM_TYPE[code] = blockType; });
+// ===== 블록 소요량 참조 품목 관리 (품목 추가/삭제) =====
+// 사용자가 추가한 참조 품목은 이 브라우저의 localStorage에 저장해 새로고침 후에도 유지
+// 구조: { [블록종류]: { [규격]: { "코드_색상": PL단위 } } }
+const BLOCK_MAP_OVERRIDES_STORAGE_KEY = 'blockMapOverrides_v1';
+function loadBlockMapOverrides() {
+  try { return JSON.parse(localStorage.getItem(BLOCK_MAP_OVERRIDES_STORAGE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveBlockMapOverrides() {
+  localStorage.setItem(BLOCK_MAP_OVERRIDES_STORAGE_KEY, JSON.stringify(state.blockMapOverrides));
+}
+state.blockMapOverrides = loadBlockMapOverrides();
+
+// 기본 BLOCK_MAP + 사용자 추가 항목을 합친 "현재 유효" 참조 품목 목록
+function getEffectiveBlockMapping(blockType, sizeLabel) {
+  const base = BLOCK_MAP[blockType]?.[sizeLabel] || [];
+  const added = state.blockMapOverrides[blockType]?.[sizeLabel] || {};
+  const addedList = Object.entries(added).map(([code, pl]) => ({ code, pl, added: true }));
+  return [...base, ...addedList];
+}
+
+// 품목코드_색상(row.key) → 블록 자재 분류 역매핑 (기본+추가 항목 모두 반영, 매핑 변경 시 재호출)
+let BLOCK_ITEM_TYPE = {};
+function rebuildBlockItemType() {
+  const result = {};
+  const blockTypes = new Set([...Object.keys(BLOCK_MAP), ...Object.keys(state.blockMapOverrides)]);
+  blockTypes.forEach(blockType => {
+    const sizeLabels = new Set([
+      ...Object.keys(BLOCK_MAP[blockType] || {}),
+      ...Object.keys(state.blockMapOverrides[blockType] || {}),
+    ]);
+    sizeLabels.forEach(sizeLabel => {
+      getEffectiveBlockMapping(blockType, sizeLabel).forEach(({ code }) => { result[code] = blockType; });
+    });
   });
-});
+  BLOCK_ITEM_TYPE = result;
+}
+rebuildBlockItemType();
 // 엘라스틱·테롤 22·스프링 엘라스틱 소요 품목은 기준일·기준일+1 생산 → 생산계획 입력 셀에 연한 노랑으로 표기
 // 레코텍·스프링 레코텍은 전주 목요일(기준일-5) 생산이라 이번 주 입력 칸과 무관 → 표기 없음
 const DATE_HINT_BLOCK_TYPES = ['엘라스틱', '테롤 22', '스프링 엘라스틱'];
@@ -2738,7 +2780,7 @@ function getPlanTotalByKey(key) {
 
 // 블록 소요량 계산: ROUNDUP(SUM(계획/PL단위), 0)
 function calcBlockRequired(blockType, sizeLabel) {
-  const mapping = BLOCK_MAP[blockType]?.[sizeLabel] || [];
+  const mapping = getEffectiveBlockMapping(blockType, sizeLabel);
   let sum = 0;
   mapping.forEach(({ code, pl }) => {
     const qty = getPlanTotalByKey(code);
@@ -2769,12 +2811,14 @@ function renderBlockTable() {
       const total = required + extra;
       sectionTotal += total;
 
-      // 참조 품목 목록
-      const mapping = BLOCK_MAP[bt.key]?.[def.label] || [];
-      const refList = mapping.map(({ code, pl }) => {
+      // 참조 품목 목록 (기본 + 사용자 추가 항목). 추가 항목은 파란 테두리로 표시하고 클릭하면 삭제
+      const mapping = getEffectiveBlockMapping(bt.key, def.label);
+      const refList = mapping.map(({ code, pl, added }) => {
         const qty = getPlanTotalByKey(code);
         const shortCode = code.split('_')[0];
-        return `<span title="${code} (PL:${pl}개)" style="color:${qty>0?'var(--accent)':'var(--text3)'}">${shortCode}${qty>0?`(${qty})`:''}</span>`;
+        const addedStyle = added ? 'border:1px solid var(--managed); border-radius:3px; padding:0 3px; cursor:pointer;' : '';
+        const addedAttr = added ? `onclick="deleteBlockMapEntry('${bt.key}','${def.label}','${code}')" title="${code} (PL:${pl}개) · 사용자 추가 항목, 클릭 시 삭제"` : `title="${code} (PL:${pl}개)"`;
+        return `<span ${addedAttr} style="color:${qty>0?'var(--accent)':'var(--text3)'}; ${addedStyle}">${shortCode}${qty>0?`(${qty})`:''}${added?' ✕':''}</span>`;
       }).join(' ');
 
       return `<tr>
@@ -2824,6 +2868,94 @@ function updateBlockExtra(blockType, idx, val) {
 
 function updateBlockNote(blockType, idx, val) {
   BLOCK_DEFS[blockType][idx].note = val;
+}
+
+// ===== 블록 참조 품목 관리 팝업 (품목 추가/삭제) =====
+function renderBlockAdminPanel() {
+  const blockTypes = Object.keys(BLOCK_DEFS);
+  const selType = document.getElementById('block-add-type')?.value || blockTypes[0];
+  const sizeOptions = (BLOCK_DEFS[selType] || []).map(d => d.label);
+
+  const rows = [];
+  Object.entries(state.blockMapOverrides).forEach(([blockType, sizes]) => {
+    Object.entries(sizes).forEach(([sizeLabel, items]) => {
+      Object.entries(items).forEach(([key, pl]) => {
+        const sepIdx = key.indexOf('_');
+        const code = sepIdx >= 0 ? key.slice(0, sepIdx) : key;
+        const color = sepIdx >= 0 ? key.slice(sepIdx + 1) : '';
+        rows.push(`<tr>
+          <td>${blockType}</td><td>${sizeLabel}</td><td>${code}</td><td>${color}</td><td>${pl}</td>
+          <td><button class="btn btn-outline" style="padding:3px 8px;font-size:11px;color:var(--warn);" onclick="deleteBlockMapEntry('${blockType}','${sizeLabel}','${key}')">✕ 삭제</button></td>
+        </tr>`);
+      });
+    });
+  });
+
+  return `
+    <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:12px; flex-wrap:wrap;">
+      <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">블록 종류</label>
+        <select id="block-add-type" onchange="renderBlockAdminBody()" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px;">
+          ${blockTypes.map(bt => `<option value="${bt}" ${bt === selType ? 'selected' : ''}>${bt}</option>`).join('')}
+        </select></div>
+      <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">규격</label>
+        <select id="block-add-size" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px;">
+          ${sizeOptions.map(s => `<option value="${s}">${s}</option>`).join('')}
+        </select></div>
+      <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">품목코드</label>
+        <input type="text" id="block-add-code" placeholder="예: SLMW0090A" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:130px;"></div>
+      <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">색상</label>
+        <input type="text" id="block-add-color" placeholder="예: 5S3LS" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:90px;"></div>
+      <div><label style="font-size:11px; color:var(--text2); display:block; margin-bottom:3px;">PL단위</label>
+        <input type="number" min="1" id="block-add-pl" placeholder="예: 15" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:70px;"></div>
+      <button class="btn btn-primary" onclick="addBlockMapEntry()">+ 추가</button>
+    </div>
+    <div class="table-wrap" style="max-height:320px;">
+      <table>
+        <thead><tr><th>블록종류</th><th>규격</th><th>품목코드</th><th>색상</th><th>PL단위</th><th>작업</th></tr></thead>
+        <tbody>${rows.join('') || '<tr><td colspan="6" style="color:var(--text3);">추가된 항목이 없습니다.</td></tr>'}</tbody>
+      </table>
+    </div>
+    <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ 소요량 계산에 쓰이는 기본 참조 품목 목록에 새 품목을 추가합니다(PL단위 = 포장 LOT 단위, 블록 소요량 = 계획수량 합 ÷ PL단위 올림). 변경 사항은 이 브라우저(PC)에 자동 저장되며, 블록 소요량 화면에 바로 반영됩니다.</p>`;
+}
+
+function renderBlockAdminBody() {
+  document.getElementById('block-admin-body').innerHTML = renderBlockAdminPanel();
+}
+function openBlockAdminModal() {
+  document.getElementById('block-admin-modal-overlay').style.display = 'flex';
+  renderBlockAdminBody();
+}
+function closeBlockAdminModal() {
+  document.getElementById('block-admin-modal-overlay').style.display = 'none';
+}
+function addBlockMapEntry() {
+  const blockType = document.getElementById('block-add-type').value;
+  const sizeLabel = document.getElementById('block-add-size').value;
+  const code = document.getElementById('block-add-code').value.trim();
+  const color = document.getElementById('block-add-color').value.trim();
+  const pl = parseInt(document.getElementById('block-add-pl').value, 10);
+  if (!code || !color) { alert('품목코드와 색상을 모두 입력해 주세요.'); return; }
+  if (!pl || pl <= 0) { alert('PL단위를 1 이상의 숫자로 입력해 주세요.'); return; }
+  const key = `${code}_${color}`;
+  if (!state.blockMapOverrides[blockType]) state.blockMapOverrides[blockType] = {};
+  if (!state.blockMapOverrides[blockType][sizeLabel]) state.blockMapOverrides[blockType][sizeLabel] = {};
+  state.blockMapOverrides[blockType][sizeLabel][key] = pl;
+  saveBlockMapOverrides();
+  rebuildBlockItemType();
+  document.getElementById('block-add-code').value = '';
+  document.getElementById('block-add-color').value = '';
+  document.getElementById('block-add-pl').value = '';
+  renderBlockAdminBody();
+  if (document.getElementById('page-block').classList.contains('active')) renderBlockTable();
+}
+function deleteBlockMapEntry(blockType, sizeLabel, key) {
+  if (state.blockMapOverrides[blockType]?.[sizeLabel]) {
+    delete state.blockMapOverrides[blockType][sizeLabel][key];
+  }
+  saveBlockMapOverrides();
+  rebuildBlockItemType();
+  if (document.getElementById('block-admin-modal-overlay').style.display === 'flex') renderBlockAdminBody();
+  if (document.getElementById('page-block').classList.contains('active')) renderBlockTable();
 }
 
 // ===== 다운로드: ERP 투입 파일 =====
