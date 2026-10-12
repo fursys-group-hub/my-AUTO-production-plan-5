@@ -264,6 +264,9 @@
   /* 코드 셀 클릭 복사 */
   td.code-cell { cursor: pointer; }
   td.code-cell:hover { background: var(--primary-light) !important; }
+  /* 블록 소요량 참조 품목 코드 클릭 복사 */
+  .block-ref-code { cursor: pointer; border-radius: 2px; }
+  .block-ref-code:hover { background: var(--primary-light); }
   .copy-toast { position: fixed; top: 20px; right: 20px; background: var(--accent); color: #fff; padding: 10px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; box-shadow: var(--shadow-md); z-index: 9999; opacity: 0; pointer-events: none; }
   .copy-toast.show { animation: copyBlink 0.5s ease-in-out; }
   @keyframes copyBlink { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
@@ -2872,19 +2875,18 @@ function renderBlockTable() {
       const total = required + extra;
       sectionTotal += total;
 
-      // 참조 품목 목록 (기본 + 사용자 추가/수정 항목, 조회 전용). 수정된 항목은 파란 테두리로 표시.
-      // 추가/수정/삭제는 "+ 항목 추가" 팝업(블록 참조 품목 관리)에서 처리 — 클릭하면 해당 팝업으로 바로 이동
+      // 참조 품목 목록 (기본 + 사용자 추가/수정 항목, 조회 전용, 기존/추가 구분 없이 동일하게 표기)
+      // 품목코드 클릭 시 해당 코드를 복사 (추가/수정/삭제는 "+ 항목 추가" 버튼으로 팝업에서 처리)
       const mapping = getEffectiveBlockMapping(bt.key, def.label);
-      const refList = mapping.map(({ code, pl, added }) => {
+      const refList = mapping.map(({ code, pl }) => {
         const qty = getPlanTotalByKey(code);
         const shortCode = code.split('_')[0];
-        const addedStyle = added ? 'border:1px solid var(--managed); border-radius:3px; padding:0 3px;' : '';
-        return `<span title="${code} (나누는 값: ${pl})" style="color:${qty>0?'var(--accent)':'var(--text3)'}; ${addedStyle}">${shortCode}${qty>0?`(${qty})`:''}${added?'*':''}</span>`;
+        return `<span class="block-ref-code" onclick="copyCodeCell('${code}')" title="${code} (나누는 값: ${pl}) · 클릭하여 코드 복사" style="color:${qty>0?'var(--accent)':'var(--text3)'};">${shortCode}${qty>0?`(${qty})`:''}</span>`;
       }).join(' ') || '-';
 
       return `<tr>
         <td><strong>${def.label}</strong></td>
-        <td style="text-align:left; font-size:10px; line-height:1.6; cursor:pointer;" onclick="openBlockAdminModal('${bt.key}')" title="클릭하면 품목 추가/수정/삭제 팝업이 열립니다">${refList || '-'}</td>
+        <td style="text-align:left; font-size:10px; line-height:1.6;">${refList || '-'}</td>
         <td class="${required > 0 ? 'pos-green' : ''}">${required > 0 ? fmtNum(required) : '-'}</td>
         <td class="input-cell">
           <input type="number" min="0" value="${extra}" style="width:50px"
