@@ -367,6 +367,18 @@
   </div>
 </div>
 
+<!-- txt 업로드 시 추가할 목록을 먼저 고르는 선택 팝업 -->
+<div id="import-target-modal-overlay" class="capa-modal-overlay" style="display:none; z-index:2100;" onclick="if(event.target===this) closeImportTargetPicker()">
+  <div class="capa-modal" style="width:300px;">
+    <div class="capa-modal-header">
+      <div class="capa-modal-title">📂 어느 목록에 추가할까요?</div>
+      <button class="btn btn-outline" onclick="closeImportTargetPicker()">✕ 닫기</button>
+    </div>
+    <div id="import-target-list"></div>
+  </div>
+</div>
+<input type="file" id="managed-code-import-file-input" accept=".txt" style="display:none" onchange="importManagedCodesFromTxt(this)">
+
 <!-- 포장라인 필터 모달 -->
 <div id="line-filter-modal-overlay" class="capa-modal-overlay" style="display:none;" onclick="if(event.target===this) closeLineFilterModal()">
   <div class="capa-modal" style="width:380px;">
@@ -1450,9 +1462,7 @@ function renderManagedCodeBody() {
     <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
       <input type="text" id="managed-code-add-input" placeholder="코드 입력 후 Enter 또는 추가" style="padding:6px 8px; border:1px solid var(--border2); border-radius:4px; font-size:12px; width:160px;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addManagedCode();}">
       <button class="btn btn-primary" onclick="addManagedCode()">+ 추가</button>
-      <label class="btn btn-outline" style="cursor:pointer;">📂 txt 파일로 추가
-        <input type="file" accept=".txt" style="display:none" onchange="importManagedCodesFromTxt(this)">
-      </label>
+      <button class="btn btn-outline" onclick="openImportTargetPicker()">📂 txt 파일로 추가</button>
       <button class="btn btn-outline" style="margin-left:auto; color:var(--warn); border-color:#fecaca;" onclick="deleteManagedCodeFile()">🗑️ 이 목록 전체 삭제</button>
     </div>
     <div style="min-height:60px; border:1px solid var(--border); border-radius:6px; padding:8px; background:var(--surface2);">
@@ -1524,24 +1534,44 @@ function deleteManagedCode(fileName, code) {
   renderManagedCodeTabs();
   renderManagedCodeBody();
 }
+// txt 업로드는 지금 보고 있는 탭이 아니라, 이 선택 팝업에서 고른 목록으로 들어감(실수로 엉뚱한 목록에 추가되는 것 방지)
+let _importTargetFileName = null;
+function openImportTargetPicker() {
+  const files = Object.keys(state.managedCodeFiles);
+  if (!files.length) { alert('먼저 "➕ 새 목록"으로 목록을 만들어 주세요.'); return; }
+  document.getElementById('import-target-list').innerHTML = files.map(name =>
+    `<button class="btn btn-outline" style="display:block; width:100%; text-align:left; margin-bottom:6px; padding:8px 10px; font-size:13px;" onclick="chooseImportTarget(${jsArgForAttr(name)})">${name} <span style="color:var(--text3); font-size:11px;">(${(state.managedCodeFiles[name] || []).length}개)</span></button>`
+  ).join('');
+  document.getElementById('import-target-modal-overlay').style.display = 'flex';
+}
+function closeImportTargetPicker() {
+  document.getElementById('import-target-modal-overlay').style.display = 'none';
+}
+function chooseImportTarget(name) {
+  _importTargetFileName = name;
+  closeImportTargetPicker();
+  document.getElementById('managed-code-import-file-input').click();
+}
 function importManagedCodesFromTxt(input) {
   const file = input.files[0];
   if (!file) return;
-  const fileName = state.managedCodeTab;
-  if (!fileName) { alert('먼저 목록을 선택하거나 새로 만들어 주세요.'); return; }
+  const fileName = _importTargetFileName;
+  if (!fileName) { alert('목록을 먼저 선택해 주세요.'); return; }
   const reader = new FileReader();
   reader.onload = e => {
     const lines = e.target.result.split('\n').map(l => l.trim()).filter(Boolean);
-    const existing = new Set(state.managedCodeFiles[fileName]);
+    const existing = new Set(state.managedCodeFiles[fileName] || []);
     lines.forEach(l => existing.add(l));
     state.managedCodeFiles[fileName] = Array.from(existing);
     saveManagedCodeFiles();
+    state.managedCodeTab = fileName; // 방금 추가한 목록을 바로 보여줌
     renderManagedCodeTabs();
     renderManagedCodeBody();
     alert(`${lines.length}개 코드를 "${fileName}" 목록에 추가했습니다 (중복 제외).`);
   };
   reader.readAsText(file, 'utf-8');
   input.value = '';
+  _importTargetFileName = null;
 }
 
 // ===== 메인 계획표 생성 =====
