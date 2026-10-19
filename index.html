@@ -111,6 +111,15 @@
   td.managed-code { color: var(--managed); font-weight: 700; }
   td.name-col { text-align: left; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
   td.input-cell { padding: 2px 4px; }
+  /* 수량 입력 셀 우클릭 메모: 메모가 있으면 셀 모서리에 작은 점으로 표시 */
+  td.cell-memo-host { position: relative; }
+  .cell-memo-dot { position: absolute; top: 1px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: var(--yellow); pointer-events: none; }
+  /* 계산기 팝업 */
+  .calc-btn { padding: 10px 0; border: 1px solid var(--border2); border-radius: 4px; background: var(--surface); font-size: 14px; cursor: pointer; color: var(--text); }
+  .calc-btn:hover { background: var(--primary-light); }
+  .calc-btn-op { background: var(--surface2); color: var(--primary); font-weight: 700; }
+  .calc-btn-eq { background: var(--primary); color: #fff; font-weight: 700; grid-column: span 1; }
+  .calc-btn-eq:hover { background: var(--primary-dark); }
   td.input-cell input { width: 60px; padding: 4px 6px; border: 1px solid var(--border2); border-radius: 3px; text-align: right; font-size: 12px; }
   td.input-cell input:focus { outline: none; border-color: var(--primary); background: var(--primary-light); }
   /* 숫자 입력칸 증감 화살표(스피너) 제거 */
@@ -369,6 +378,50 @@
   </div>
 </div>
 
+<!-- 수량 입력 셀 우클릭 메모 팝업 (모달이 아니라 바깥 클릭하면 닫히는 작은 플로팅 패널) -->
+<div id="cell-memo-popup" style="display:none; position:fixed; z-index:3000; background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius); box-shadow:var(--shadow-md); padding:10px; width:220px;">
+  <div id="cell-memo-title" style="font-size:11px; font-weight:700; color:var(--text2); margin-bottom:6px;"></div>
+  <textarea id="cell-memo-text" rows="4" style="width:100%; box-sizing:border-box; resize:vertical; font-size:12px; padding:6px; border:1px solid var(--border2); border-radius:4px; font-family:inherit;" placeholder="메모 입력..."></textarea>
+  <div style="display:flex; gap:6px; margin-top:8px; justify-content:flex-end;">
+    <button class="btn btn-outline" style="font-size:11px; padding:4px 8px; color:var(--warn); border-color:#fecaca;" onclick="deleteCellMemoCurrent()">삭제</button>
+    <button class="btn btn-outline" style="font-size:11px; padding:4px 8px;" onclick="closeCellMemo()">닫기</button>
+    <button class="btn btn-primary" style="font-size:11px; padding:4px 8px;" onclick="saveCellMemoCurrent()">저장</button>
+  </div>
+</div>
+
+<!-- 계산기 팝업 (모달이 아니라 드래그해서 옮길 수 있는 플로팅 창, 다른 화면 조작을 막지 않음) -->
+<div id="calculator-popup" style="display:none; position:fixed; top:90px; right:24px; z-index:3000; width:220px; background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius); box-shadow:var(--shadow-md); overflow:hidden;">
+  <div id="calculator-header" style="background:var(--primary); color:#fff; padding:8px 10px; display:flex; align-items:center; justify-content:space-between; cursor:move; font-size:12px; font-weight:700; user-select:none;">
+    <span>🧮 계산기</span>
+    <span class="calc-close-btn" style="cursor:pointer;" onclick="closeCalculator()">✕</span>
+  </div>
+  <div style="padding:10px;">
+    <input type="text" id="calc-display" readonly style="width:100%; box-sizing:border-box; text-align:right; font-size:20px; padding:8px; border:1px solid var(--border2); border-radius:4px; margin-bottom:8px; background:var(--surface2); color:var(--text);" value="0">
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:5px;">
+      <button class="calc-btn calc-btn-op" onclick="calcClear()">C</button>
+      <button class="calc-btn calc-btn-op" onclick="calcBackspace()">⌫</button>
+      <button class="calc-btn calc-btn-op" onclick="calcPercent()">%</button>
+      <button class="calc-btn calc-btn-op" onclick="calcOp('/')">÷</button>
+      <button class="calc-btn" onclick="calcDigit('7')">7</button>
+      <button class="calc-btn" onclick="calcDigit('8')">8</button>
+      <button class="calc-btn" onclick="calcDigit('9')">9</button>
+      <button class="calc-btn calc-btn-op" onclick="calcOp('*')">×</button>
+      <button class="calc-btn" onclick="calcDigit('4')">4</button>
+      <button class="calc-btn" onclick="calcDigit('5')">5</button>
+      <button class="calc-btn" onclick="calcDigit('6')">6</button>
+      <button class="calc-btn calc-btn-op" onclick="calcOp('-')">−</button>
+      <button class="calc-btn" onclick="calcDigit('1')">1</button>
+      <button class="calc-btn" onclick="calcDigit('2')">2</button>
+      <button class="calc-btn" onclick="calcDigit('3')">3</button>
+      <button class="calc-btn calc-btn-op" onclick="calcOp('+')">+</button>
+      <button class="calc-btn" onclick="calcSign()">±</button>
+      <button class="calc-btn" onclick="calcDigit('0')">0</button>
+      <button class="calc-btn" onclick="calcDigit('.')">.</button>
+      <button class="calc-btn calc-btn-eq" onclick="calcEquals()">=</button>
+    </div>
+  </div>
+</div>
+
 <!-- 네비게이션 -->
 <nav class="nav">
   <div class="nav-title">📋 생산계획</div>
@@ -377,6 +430,9 @@
   <div class="tab" onclick="switchTab('order')">📦 일일 수주량</div>
   <div class="tab" onclick="switchTab('stock')">🏭 일일 재고량</div>
   <div class="tab" onclick="switchTab('sales')">📈 판매예측 매핑</div>
+  <div style="margin-left:auto; display:flex; align-items:center; padding:0 12px;">
+    <button class="btn btn-outline" style="font-size:11px; padding:5px 10px;" onclick="openCalculator()">🧮 계산기</button>
+  </div>
 </nav>
 
 <!-- ===================== 메인: 생산계획 입력 ===================== -->
@@ -1493,9 +1549,13 @@ function buildMainTable() {
   if (!state.orderData) { alert('수주량 파일을 먼저 업로드하세요.'); return; }
   if (!state.baseDate) { alert('기준일을 먼저 설정하세요.'); return; }
 
-  // 작업 진행상태(O/△) 표시는 계획표를 다시 생성해도 유지되도록 미리 저장해둠
+  // 작업 진행상태(O/△) 표시와 셀 메모는 계획표를 다시 생성해도 유지되도록 미리 저장해둠
   const prevMarks = {};
-  (state.planRows || []).forEach(r => { if (r.statusMark) prevMarks[r.key] = r.statusMark; });
+  const prevMemos = {};
+  (state.planRows || []).forEach(r => {
+    if (r.statusMark) prevMarks[r.key] = r.statusMark;
+    if (r.cellMemo && Object.values(r.cellMemo).some(Boolean)) prevMemos[r.key] = r.cellMemo;
+  });
 
   const bd = state.baseDate;
   const prevDate  = fmtDate(new Date(bd.getTime() - 86400000));      // 기준전일 (기준일-1)
@@ -1563,6 +1623,7 @@ function buildMainTable() {
       lineCode: matchLineCode(grdItem?.lineRaw),
       plUnit: PL_UNIT_MAP[item.key],
       statusMark: prevMarks[item.key] || '',
+      cellMemo: prevMemos[item.key] || { target: '', 월: '', 화: '', 수: '', 목: '', 금: '' },
       stockType: grdItem?.stockType || '',
       useYn: grdItem?.useYn || '',
       grdColored: state.grdData?.coloredKeys?.has(item.key) || false,
@@ -1589,6 +1650,7 @@ function buildMainTable() {
           if (s.targetQty !== undefined) row.targetQty = s.targetQty || 0;
           if (s.lineCode) row.lineCode = s.lineCode;
           if (s.statusMark !== undefined) row.statusMark = s.statusMark || '';
+          if (s.cellMemo) row.cellMemo = { ...row.cellMemo, ...s.cellMemo };
           cnt++;
         });
         if (cnt > 0) {
@@ -1706,9 +1768,9 @@ function renderMainTable() {
       <td>${row.salesForecast ? fmtNum(row.salesForecast) : '-'}</td>
       <td>${row.properSupply ? fmtNum(row.properSupply) : '-'}</td>
       <td>${row.endStock ? fmtNum(row.endStock) : '-'}</td>
-      <td class="input-cell">
+      <td class="input-cell cell-memo-host" oncontextmenu="openCellMemo(event, '${row.key}', 'target'); return false;" title="${row.cellMemo?.target ? '📝 ' + row.cellMemo.target : ''}">
         <input type="number" min="0" value="${row.targetQty || ''}" placeholder="0"
-          onchange="updateTarget('${row.key}', this.value)" style="width:55px">
+          onchange="updateTarget('${row.key}', this.value)" style="width:55px">${row.cellMemo?.target ? '<span class="cell-memo-dot"></span>' : ''}
       </td>
       ${['월','화','수','목','금'].map((d,i) => {
         // 엘라스틱·테롤 22 소요 품목은 기준일(월)·기준일+1(화)에 생산 → 해당 칸에 연한 노랑 표기
@@ -1716,10 +1778,11 @@ function renderMainTable() {
         const dObj = row.weekDates?.[i];
         const isHoliday = dObj && isHolidayDate(fmtDate(dObj.date));
         const holidayCls = isHoliday ? ' holiday-col' : '';
+        const dayMemo = row.cellMemo?.[d];
         return `
-        <td class="input-cell col-${['mon','tue','wed','thu','fri'][i]}${dateHintCls}${holidayCls}">
+        <td class="input-cell cell-memo-host col-${['mon','tue','wed','thu','fri'][i]}${dateHintCls}${holidayCls}" oncontextmenu="openCellMemo(event, '${row.key}', '${d}'); return false;" title="${dayMemo ? '📝 ' + dayMemo : ''}">
           <input type="number" min="0" value="${row.dayQty[d] || ''}" placeholder="0"
-            onchange="updateDay('${row.key}', '${d}', this.value)" style="width:45px">
+            onchange="updateDay('${row.key}', '${d}', this.value)" style="width:45px">${dayMemo ? '<span class="cell-memo-dot"></span>' : ''}
         </td>`;
       }).join('')}
       <td class="${verified ? 'verified' : hasAnyInput ? 'not-verified' : ''}">${fmtNum(weekTotal)}</td>
@@ -1889,6 +1952,7 @@ function autoSavePlan() {
         targetQty: r.targetQty || 0,
         lineCode: r.lineCode || '', plUnit: r.plUnit || null,
         statusMark: r.statusMark || '',
+        cellMemo: { ...r.cellMemo },
         weekDates: (r.weekDates || []).map(d => ({
           dateStr: fmtDate(d.date), label: d.label, fmt: d.fmt
         }))
@@ -2027,6 +2091,7 @@ function loadRestoreFile(input) {
           plUnit: row[idx['plUnit']] !== '' ? Number(row[idx['plUnit']]) : null,
           statusMark: ps(row,'statusMark'),
           dayQty: { '월':pn(row,'qty_월'),'화':pn(row,'qty_화'),'수':pn(row,'qty_수'),'목':pn(row,'qty_목'),'금':pn(row,'qty_금') },
+          cellMemo: { target: ps(row,'memo_target'), '월':ps(row,'memo_월'),'화':ps(row,'memo_화'),'수':ps(row,'memo_수'),'목':ps(row,'memo_목'),'금':ps(row,'memo_금') },
           weekDates
         });
       }
@@ -3534,7 +3599,8 @@ function buildRestoreSheetData() {
      'stockType','useYn','grdColored','targetQty','lineCode','plUnit','statusMark',
      'qty_월','qty_화','qty_수','qty_목','qty_금',
      'date_월','date_화','date_수','date_목','date_금',
-     'fmt_월','fmt_화','fmt_수','fmt_목','fmt_금']
+     'fmt_월','fmt_화','fmt_수','fmt_목','fmt_금',
+     'memo_target','memo_월','memo_화','memo_수','memo_목','memo_금']
   ];
   state.planRows.forEach(r => {
     const wd = r.weekDates || [];
@@ -3548,7 +3614,8 @@ function buildRestoreSheetData() {
       r.targetQty||0, r.lineCode||'', r.plUnit||'', r.statusMark||'',
       ...dayLabels.map(l => r.dayQty?.[l]||0),
       ...dayLabels.map(l => { const d = wd.find(x => x.label===l); return d ? fmtDate(d.date) : ''; }),
-      ...dayLabels.map(l => { const d = wd.find(x => x.label===l); return d ? d.fmt : ''; })
+      ...dayLabels.map(l => { const d = wd.find(x => x.label===l); return d ? d.fmt : ''; }),
+      r.cellMemo?.target||'', ...dayLabels.map(l => r.cellMemo?.[l]||'')
     ]);
   });
   return rows;
@@ -3668,6 +3735,131 @@ document.addEventListener('wheel', e => {
   const el = document.activeElement;
   if (el && el.tagName === 'INPUT' && el.type === 'number') el.blur();
 }, { passive: true });
+
+// ===== 수량 입력 셀 우클릭 메모 =====
+let _cellMemoTarget = null; // { key, field }
+function openCellMemo(event, key, field) {
+  event.preventDefault();
+  const row = state.planRows.find(r => r.key === key);
+  if (!row) return;
+  if (!row.cellMemo) row.cellMemo = { target: '', 월: '', 화: '', 수: '', 목: '', 금: '' };
+  _cellMemoTarget = { key, field };
+  const fieldLabel = field === 'target' ? '목표생산량' : `${field}요일`;
+  document.getElementById('cell-memo-title').textContent = `📝 메모 — ${row.code}${row.color ? '_' + row.color : ''} (${fieldLabel})`;
+  document.getElementById('cell-memo-text').value = row.cellMemo[field] || '';
+  const popup = document.getElementById('cell-memo-popup');
+  popup.style.display = 'block';
+  const margin = 8, w = 240, h = 170;
+  let x = Math.min(event.clientX, window.innerWidth - w - margin);
+  let y = Math.min(event.clientY, window.innerHeight - h - margin);
+  popup.style.left = Math.max(margin, x) + 'px';
+  popup.style.top = Math.max(margin, y) + 'px';
+  document.getElementById('cell-memo-text').focus();
+}
+function closeCellMemo() {
+  document.getElementById('cell-memo-popup').style.display = 'none';
+  _cellMemoTarget = null;
+}
+function saveCellMemoCurrent() {
+  if (!_cellMemoTarget) return;
+  const { key, field } = _cellMemoTarget;
+  const row = state.planRows.find(r => r.key === key);
+  if (row) {
+    if (!row.cellMemo) row.cellMemo = { target: '', 월: '', 화: '', 수: '', 목: '', 금: '' };
+    row.cellMemo[field] = document.getElementById('cell-memo-text').value.trim();
+  }
+  closeCellMemo();
+  renderMainTable();
+  autoSavePlan();
+}
+function deleteCellMemoCurrent() {
+  if (!_cellMemoTarget) return;
+  const { key, field } = _cellMemoTarget;
+  const row = state.planRows.find(r => r.key === key);
+  if (row?.cellMemo) row.cellMemo[field] = '';
+  closeCellMemo();
+  renderMainTable();
+  autoSavePlan();
+}
+// 메모 팝업 바깥을 클릭하면 저장 없이 닫음(입력 중 저장하려면 "저장" 버튼 사용)
+document.addEventListener('mousedown', e => {
+  const popup = document.getElementById('cell-memo-popup');
+  if (popup && popup.style.display !== 'none' && !popup.contains(e.target)) closeCellMemo();
+});
+
+// ===== 간단 계산기 팝업 (드래그 이동 가능, 다른 화면 조작은 막지 않음) =====
+const calcState = { display: '0', prev: null, op: null, resetNext: false };
+function calcRender() { document.getElementById('calc-display').value = calcState.display; }
+function calcDigit(d) {
+  if (calcState.resetNext) { calcState.display = '0'; calcState.resetNext = false; }
+  if (d === '.' && calcState.display.includes('.')) return;
+  calcState.display = (calcState.display === '0' && d !== '.') ? d : calcState.display + d;
+  calcRender();
+}
+function calcClear() {
+  Object.assign(calcState, { display: '0', prev: null, op: null, resetNext: false });
+  calcRender();
+}
+function calcBackspace() {
+  if (calcState.resetNext) return;
+  calcState.display = calcState.display.length > 1 ? calcState.display.slice(0, -1) : '0';
+  calcRender();
+}
+function calcSign() {
+  if (calcState.display !== '0') calcState.display = calcState.display.startsWith('-') ? calcState.display.slice(1) : '-' + calcState.display;
+  calcRender();
+}
+function calcPercent() {
+  calcState.display = String(parseFloat(calcState.display) / 100);
+  calcRender();
+}
+function calcOp(op) {
+  if (calcState.op !== null && !calcState.resetNext) calcEquals();
+  calcState.prev = parseFloat(calcState.display);
+  calcState.op = op;
+  calcState.resetNext = true;
+}
+function calcEquals() {
+  if (calcState.op === null || calcState.prev === null) return;
+  const cur = parseFloat(calcState.display);
+  let result;
+  if (calcState.op === '+') result = calcState.prev + cur;
+  else if (calcState.op === '-') result = calcState.prev - cur;
+  else if (calcState.op === '*') result = calcState.prev * cur;
+  else if (calcState.op === '/') result = cur === 0 ? NaN : calcState.prev / cur;
+  calcState.display = Number.isFinite(result) ? String(Math.round(result * 1e8) / 1e8) : '오류';
+  calcState.op = null;
+  calcState.prev = null;
+  calcState.resetNext = true;
+  calcRender();
+}
+function openCalculator() {
+  document.getElementById('calculator-popup').style.display = 'block';
+}
+function closeCalculator() {
+  document.getElementById('calculator-popup').style.display = 'none';
+}
+// 계산기 헤더를 드래그해서 창 위치 이동
+(function initCalculatorDrag() {
+  const popup = document.getElementById('calculator-popup');
+  const header = document.getElementById('calculator-header');
+  let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+  header.addEventListener('mousedown', e => {
+    if (e.target.closest('.calc-close-btn')) return;
+    dragging = true;
+    const rect = popup.getBoundingClientRect();
+    startX = e.clientX; startY = e.clientY;
+    startLeft = rect.left; startTop = rect.top;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    popup.style.left = Math.max(0, startLeft + e.clientX - startX) + 'px';
+    popup.style.top = Math.max(0, startTop + e.clientY - startY) + 'px';
+    popup.style.right = 'auto';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+})();
 
 // 페이지 로드 시: localStorage에 저장된 전체 planRows가 있으면 즉시 화면 복원
 document.addEventListener('DOMContentLoaded', () => {
