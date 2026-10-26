@@ -362,8 +362,14 @@
       <button class="btn btn-outline" onclick="closeManagedCodeModal()">✕ 닫기</button>
     </div>
     <p style="font-size:11px; color:var(--text3); margin:-6px 0 12px;">담당자별로 목록(파일)을 나눠 관리할 수 있습니다. 여기서 추가·삭제하는 내용은 서버에 즉시 저장되어 모든 사용자·기기에 자동으로 공유됩니다.</p>
-    <div class="capa-admin-tabs" id="managed-code-tabs"></div>
-    <div id="managed-code-body"></div>
+    <div style="margin-bottom:12px;">
+      <input type="text" id="managed-code-search" placeholder="🔍 전체 목록에서 코드 검색 (어느 탭에 있는지, 이미 등록됐는지 확인)" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid var(--border2); border-radius:4px; font-size:13px;" oninput="searchManagedCodes()">
+      <div id="managed-code-search-results"></div>
+    </div>
+    <div id="managed-code-tabs-wrap">
+      <div class="capa-admin-tabs" id="managed-code-tabs"></div>
+      <div id="managed-code-body"></div>
+    </div>
   </div>
 </div>
 
@@ -1334,8 +1340,8 @@ async function syncManagedCodeFilesFromServer() {
       if (!state.managedCodeTab || !state.managedCodeFiles[state.managedCodeTab]) {
         state.managedCodeTab = Object.keys(state.managedCodeFiles)[0] || null;
       }
-      renderManagedCodeTabs();
-      renderManagedCodeBody();
+      if (document.getElementById('managed-code-search')?.value.trim()) searchManagedCodes();
+      else { renderManagedCodeTabs(); renderManagedCodeBody(); }
     }
   } catch (err) {
     console.warn('관리 품목 코드 서버 동기화 실패(이 브라우저에 저장된 값 사용):', err);
@@ -1471,6 +1477,56 @@ function renderManagedCodeBody() {
     <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ 탭 왼쪽 체크박스로 목록별 적용/적용취소가 가능합니다. <strong>적용 중인 목록의 코드만</strong> 합쳐져 "관리 품목"이 되고 메인 화면 표시·"관리품목만" 필터에 쓰입니다.</p>`;
 }
 
+// 전체 목록(탭)을 통틀어 코드 검색 — 삭제할 코드 찾기, 이미 등록됐는지 확인, 어느 탭에 있는지 확인 용도
+function searchManagedCodes() {
+  const q = document.getElementById('managed-code-search').value.trim().toLowerCase();
+  const resultsEl = document.getElementById('managed-code-search-results');
+  const tabsWrap = document.getElementById('managed-code-tabs-wrap');
+  if (!q) {
+    resultsEl.innerHTML = '';
+    tabsWrap.style.display = '';
+    return;
+  }
+  tabsWrap.style.display = 'none';
+  const matches = [];
+  Object.entries(state.managedCodeFiles).forEach(([listName, codes]) => {
+    (codes || []).forEach(code => {
+      if (code.toLowerCase().includes(q)) matches.push({ listName, code });
+    });
+  });
+  if (!matches.length) {
+    resultsEl.innerHTML = `<p style="font-size:12px; color:var(--text3); padding:10px 2px;">"${q}"를 포함한 코드가 없습니다.</p>`;
+    return;
+  }
+  resultsEl.innerHTML = `
+    <p style="font-size:11px; color:var(--text3); margin:8px 2px 6px;">${matches.length}건 찾음</p>
+    <div style="max-height:320px; overflow:auto; border:1px solid var(--border); border-radius:6px;">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead><tr style="background:var(--surface2);"><th style="padding:6px 8px; text-align:left; font-size:11px;">코드</th><th style="padding:6px 8px; text-align:left; font-size:11px;">목록</th><th style="padding:6px 8px; font-size:11px;">작업</th></tr></thead>
+        <tbody>${matches.map(({ listName, code }) => `
+          <tr style="border-top:1px solid var(--border);">
+            <td style="padding:6px 8px; font-size:12px;">${code}</td>
+            <td style="padding:6px 8px; font-size:12px;">${listName}</td>
+            <td style="padding:6px 8px; text-align:center; white-space:nowrap;">
+              <button class="btn btn-outline" style="padding:3px 7px; font-size:11px;" onclick="jumpToManagedCodeTab(${jsArgForAttr(listName)})">이동</button>
+              <button class="btn btn-outline" style="padding:3px 7px; font-size:11px; color:var(--warn); border-color:#fecaca;" onclick="deleteManagedCodeFromSearch(${jsArgForAttr(listName)}, ${jsArgForAttr(code)})">삭제</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+function jumpToManagedCodeTab(listName) {
+  document.getElementById('managed-code-search').value = '';
+  document.getElementById('managed-code-search-results').innerHTML = '';
+  document.getElementById('managed-code-tabs-wrap').style.display = '';
+  switchManagedCodeTab(listName);
+}
+function deleteManagedCodeFromSearch(listName, code) {
+  deleteManagedCode(listName, code);
+  searchManagedCodes(); // 검색 결과를 그 자리에서 갱신
+}
+
 function switchManagedCodeTab(name) {
   state.managedCodeTab = name;
   renderManagedCodeTabs();
@@ -1479,6 +1535,9 @@ function switchManagedCodeTab(name) {
 function openManagedCodeModal() {
   const files = Object.keys(state.managedCodeFiles);
   if (!state.managedCodeTab || !files.includes(state.managedCodeTab)) state.managedCodeTab = files[0] || null;
+  document.getElementById('managed-code-search').value = '';
+  document.getElementById('managed-code-search-results').innerHTML = '';
+  document.getElementById('managed-code-tabs-wrap').style.display = '';
   document.getElementById('managed-code-modal-overlay').style.display = 'flex';
   renderManagedCodeTabs();
   renderManagedCodeBody();
