@@ -3341,7 +3341,12 @@ function updateBlockCalc() {
 // 블록 자재별 생산 기준일에 맞춘 비고용 날짜: 레코텍·스프링 레코텍=기준일-5일, 그 외(엘라스틱·테롤 22·스프링 엘라스틱)=기준일+1일
 function getBlockNoteDate(blockType) {
   if (!state.baseDate) return '';
-  const offsetDays = (blockType === '레코텍' || blockType === '스프링 레코텍') ? -5 : 1;
+  const OFFSET_BY_TYPE = {
+    '레코텍': -5, '스프링 레코텍': -5,
+    '엘라스틱': -4, '스프링 엘라스틱': -4,
+    '테롤 22': -3,
+  };
+  const offsetDays = OFFSET_BY_TYPE[blockType] ?? 1;
   const d = new Date(state.baseDate.getTime() + offsetDays * 86400000);
   return `${d.getMonth()+1}/${d.getDate()}`;
 }
