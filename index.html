@@ -508,6 +508,7 @@
     <div style="margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
       <span id="save-indicator" style="font-size:11px; color:var(--text3); white-space:nowrap;"></span>
       <button class="btn btn-outline" onclick="clearManualInputs()" style="font-size:11px; padding:5px 10px; color:var(--warn); border-color:#fecaca;">🧹 입력 내용 초기화</button>
+      <button class="btn btn-outline" onclick="clearManualHolidays()" style="font-size:11px; padding:5px 10px;">🗓️ 휴일 표시 초기화</button>
       <button class="btn btn-outline" onclick="clearSavedPlan()" style="font-size:11px; padding:5px 10px;">🗑️ 저장 초기화</button>
       <button class="btn btn-primary" onclick="buildMainTable()">🔄 계획표 생성</button>
       <button class="btn btn-outline" onclick="openCapaModal()">🏗️ 2층 CAPA</button>
@@ -2059,6 +2060,18 @@ function clearSavedPlan() {
   localStorage.removeItem('planSaveData_v1');
   updateSaveIndicator('', false);
   showAutoToast('🗑️ 저장 데이터 초기화됨', '#64748b');
+}
+
+// 날짜 헤더를 클릭해 수동으로 켠 임시 휴일 표시는 다시 클릭해서 끄기 전까지 계속 쌓이고,
+// "입력 내용 초기화"/"저장 초기화"로도 지워지지 않아서 따로 초기화하는 버튼이 필요함
+// (자동 인식 공휴일은 그대로 유지되고, 수동으로 켠 것만 지움)
+function clearManualHolidays() {
+  if (!state.holidayDates.size) { alert('수동으로 지정한 휴일이 없습니다.'); return; }
+  if (!confirm(`수동으로 지정한 휴일 표시 ${state.holidayDates.size}개를 모두 해제할까요?\n(공휴일 자동 인식 표시는 그대로 유지됩니다.)`)) return;
+  state.holidayDates.clear();
+  renderMainTable();
+  autoSavePlan();
+  showAutoToast('🗓️ 수동 휴일 표시 초기화됨', '#64748b');
 }
 
 // 현재 화면에 입력한 수기 입력값(요일별 수량·목표생산량·확인 표시)만 초기화
