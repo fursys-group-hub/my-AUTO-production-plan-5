@@ -3428,17 +3428,55 @@ const BLOCK_DEFS = {
   '스프링 엘라스틱': ['S','SS','Q','K'].map(s => ({ label: s, extra: 0, note: '' })),
 };
 
+// 블록 종류·규격별 ERP 반제품코드/명칭 (사용자 제공 표 그대로, 추측 없이 매칭)
+// 스프링 레코텍=레코텍, 스프링 엘라스틱=엘라스틱과 같은 품목이라 규격별로 같은 코드를 그대로 적용
+const BLOCK_ERP_RAW = {
+  '레코텍': {
+    S:  { code: 'OPFW002069-R000', name: '블록, Repol 메모리폼 60K/5.5, S' },
+    SS: { code: 'OPFW001166-R000', name: '블록, Repol 메모리폼 60K/5.5, SS' },
+    Q:  { code: 'OPFW001167-R000', name: '블록, Repol 메모리폼 60K/5.5, Q' },
+    K:  { code: 'OPFW001168-R000', name: '블록, Repol 메모리폼 60K/5.5, K' },
+    KK: { code: 'OPFW003944-R000', name: '블록, Repol 메모리폼 60K/5.5, KK' },
+  },
+  '엘라스틱': {
+    S:  { code: 'OPFW002177-R000', name: '블록, 엘라스틱폼 하드 55K/9, S' },
+    SS: { code: 'OPFW002178-R000', name: '블록, 엘라스틱폼 하드 55K/9, SS' },
+    Q:  { code: 'OPFW002179-R000', name: '블록, 엘라스틱폼 하드 55K/9, Q' },
+    K:  { code: 'OPFW002180-R000', name: '블록, 엘라스틱폼 하드 55K/9, K' },
+    KK: { code: 'OPFW003905-R000', name: '블록, 엘라스틱폼 하드 55K/9, KK' },
+  },
+  '테롤 22': {
+    S:  { code: 'OPFW004663-R000', name: '블록, 엘라스틱폼 테롤 50K/22, S' },
+    SS: { code: 'OPFW004664-R000', name: '블록, 엘라스틱폼 테롤 50K/22, SS' },
+    Q:  { code: 'OPFW004665-R000', name: '블록, 엘라스틱폼 테롤 50K/22, Q' },
+    K:  { code: 'OPFW004666-R000', name: '블록, 엘라스틱폼 테롤 50K/22, K' },
+    KK: { code: 'OPFW004667-R000', name: '블록, 엘라스틱폼 테롤 50K/22, KK' },
+  },
+};
+const BLOCK_ERP_MAP = {
+  '레코텍': BLOCK_ERP_RAW['레코텍'],
+  '스프링 레코텍': BLOCK_ERP_RAW['레코텍'],
+  '엘라스틱': BLOCK_ERP_RAW['엘라스틱'],
+  '스프링 엘라스틱': BLOCK_ERP_RAW['엘라스틱'],
+  '테롤 22': BLOCK_ERP_RAW['테롤 22'],
+};
+// 표에 없는 블록종류·규격 조합은 추측하지 않고 null(화면/다운로드에서 "미확인")로 반환
+function getBlockErpInfo(blockType, sizeLabel) {
+  return BLOCK_ERP_MAP[blockType]?.[sizeLabel] || null;
+}
+
 function updateBlockCalc() {
   renderBlockTable();
 }
 
-// 블록 자재별 생산 기준일에 맞춘 비고용 날짜: 레코텍·스프링 레코텍=기준일-5일, 그 외(엘라스틱·테롤 22·스프링 엘라스틱)=기준일+1일
+// 블록 자재별 생산 기준일에 맞춘 비고용 날짜 (2026-11-15 기준, 기존보다 전체 하루씩 앞당김):
+// 레코텍·스프링 레코텍=기준일-6일, 엘라스틱·스프링 엘라스틱=기준일-5일, 테롤 22=기준일-4일
 function getBlockNoteDate(blockType) {
   if (!state.baseDate) return '';
   const OFFSET_BY_TYPE = {
-    '레코텍': -5, '스프링 레코텍': -5,
-    '엘라스틱': -4, '스프링 엘라스틱': -4,
-    '테롤 22': -3,
+    '레코텍': -6, '스프링 레코텍': -6,
+    '엘라스틱': -5, '스프링 엘라스틱': -5,
+    '테롤 22': -4,
   };
   const offsetDays = OFFSET_BY_TYPE[blockType] ?? 1;
   const d = new Date(state.baseDate.getTime() + offsetDays * 86400000);
@@ -3503,8 +3541,17 @@ function renderBlockTable() {
         return `<span class="block-ref-code" onclick="copyCodeCell('${shortCode}')" title="${code} (나누는 값: ${pl}) · 클릭하여 단품코드 복사" style="color:${qty>0?'var(--accent)':'var(--text3)'};">${shortCode}${qty>0?`(${qty})`:''}</span>`;
       }).join(' ') || '-';
 
+      // ERP 반제품코드/명칭: 사용자가 제공한 표에서만 매칭, 없으면 추측하지 않고 "미확인"
+      const erp = getBlockErpInfo(bt.key, def.label);
+      const erpCodeCell = erp
+        ? `<span class="block-ref-code" onclick="copyCodeCell('${erp.code}')" title="클릭하여 ERP 반제품코드 복사">${erp.code}</span>`
+        : `<span style="color:var(--warn); font-weight:600;">미확인</span>`;
+      const erpNameCell = erp ? erp.name : `<span style="color:var(--warn);">미확인</span>`;
+
       return `<tr>
         <td><strong>${def.label}</strong></td>
+        <td style="text-align:left; font-size:11px;">${erpCodeCell}</td>
+        <td style="text-align:left; font-size:11px;">${erpNameCell}</td>
         <td style="text-align:left; font-size:10px; line-height:1.6;">${refList || '-'}</td>
         <td class="${required > 0 ? 'pos-green' : ''}">${required > 0 ? fmtNum(required) : '-'}</td>
         <td class="input-cell">
@@ -3527,6 +3574,8 @@ function renderBlockTable() {
       <div class="table-wrap"><table>
         <thead><tr>
           <th style="width:40px">규격</th>
+          <th>ERP 반제품코드</th>
+          <th>ERP 명칭</th>
           <th>참조 품목 (계획수량)</th>
           <th>소요량</th>
           <th>여유분</th>
@@ -3814,14 +3863,15 @@ function downloadBlockTable() {
   autoFillBlockNotes();
   const blockTypes = ['레코텍', '엘라스틱', '테롤 22', '스프링 레코텍', '스프링 엘라스틱'];
   const weekLabel = document.getElementById('week-label').value || '생산계획';
-  const rows = [['구분', '규격', '소요량', '여유분', '총계', '비고']];
+  const rows = [['구분', '규격', 'ERP 반제품코드', 'ERP 명칭', '소요량', '여유분', '총계', '비고']];
 
   blockTypes.forEach(bt => {
     BLOCK_DEFS[bt].forEach(def => {
       const required = calcBlockRequired(bt, def.label);
       const extra = def.extra || 0;
       const total = required + extra;
-      rows.push([bt, def.label, required || 0, extra || 0, total || 0, def.note || '']);
+      const erp = getBlockErpInfo(bt, def.label);
+      rows.push([bt, def.label, erp ? erp.code : '미확인', erp ? erp.name : '미확인', required || 0, extra || 0, total || 0, def.note || '']);
     });
   });
 
