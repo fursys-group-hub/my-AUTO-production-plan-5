@@ -529,9 +529,11 @@
   <!-- 필터/검색 -->
   <div class="filter-bar" id="main-filter-bar" style="display:none;">
     <input type="text" class="search-input" id="main-search" placeholder="🔍 품목코드 / 품목명 검색" oninput="filterMainTable()">
+    <button class="filter-btn" onclick="resetAllFilters()" title="검색어와 모든 필터를 한번에 초기화">🔄 필터 초기화</button>
     <button class="filter-btn active" id="filter-all" onclick="clearFilters()">전체</button>
     <button class="filter-btn" id="filter-managed" onclick="toggleFilter('managed')">관리품목만</button>
     <button class="filter-btn" id="filter-neg" onclick="toggleFilter('neg')">재고부족</button>
+    <span id="capa-cell-filter-chip"></span>
     <button class="toggle-btn" onclick="toggleNameCol()" id="toggle-name-btn">품목명 숨기기</button>
     <span id="row-count" style="font-size:11px; color:var(--text3); margin-left:4px;"></span>
   </div>
@@ -699,6 +701,7 @@ const state = {
   orderFilterModes: new Set(), // 일일 수주량 탭 필터
   stockFilterModes: new Set(), // 일일 재고량 탭 필터
   lineFilterSet: new Set(), // 포장라인 필터(선택된 라인코드들) - 비어있으면 전체
+  capaCellFilter: null, // CAPA 팝업 셀 클릭으로 적용한 필터 { groupKey, line, day, label } - null이면 미적용
   LINE_CODES: {
     '100000': '포장1(스프링)',
     '100001': '판조립 반제품',
@@ -1762,6 +1765,7 @@ function renderMainTable() {
   const rows = getFilteredRows();
   const weekDates = state.planRows[0]?.weekDates || [];
   document.getElementById('row-count').textContent = `${rows.length}건`;
+  updateCapaCellFilterChip();
 
   let html = `<div class="table-wrap freeze-wrap"><table class="freeze-table">
     <colgroup>
@@ -2252,7 +2256,36 @@ function getFilteredRows() {
   if (state.filterModes.has('neg')) rows = rows.filter(r => r.prev8Stock < 0 || r.prevStock < 0 || r.stockMinusAvg < 0);
   if (state.filterModes.has('targetPositive')) rows = rows.filter(r => r.targetQty > 0);
   if (state.lineFilterSet.size > 0) rows = rows.filter(r => state.lineFilterSet.has(r.lineCode));
+  if (state.capaCellFilter) {
+    const matchKeys = new Set(getCapaCellFilterRows(state.capaCellFilter.groupKey, state.capaCellFilter.line, state.capaCellFilter.day).map(r => r.key));
+    rows = rows.filter(r => matchKeys.has(r.key));
+  }
   return rows;
+}
+
+// 검색창 + 모든 필터(관리품목/재고부족/목표생산량/포장라인/CAPA 셀 필터)를 한번에 초기화
+function resetAllFilters() {
+  const searchEl = document.getElementById('main-search');
+  if (searchEl) searchEl.value = '';
+  state.filterModes.clear();
+  state.lineFilterSet.clear();
+  state.capaCellFilter = null;
+  updateFilterButtons();
+  updateCapaCellFilterChip();
+  renderMainTable();
+}
+
+function clearCapaCellFilter() {
+  state.capaCellFilter = null;
+  updateCapaCellFilterChip();
+  renderMainTable();
+}
+
+function updateCapaCellFilterChip() {
+  const el = document.getElementById('capa-cell-filter-chip');
+  if (!el) return;
+  if (!state.capaCellFilter) { el.innerHTML = ''; return; }
+  el.innerHTML = `<span class="date-chip" style="cursor:pointer;" onclick="clearCapaCellFilter()" title="클릭하여 이 필터 해제">🏗️ ${state.capaCellFilter.label} 생산 품목만 ✕</span>`;
 }
 
 function filterMainTable() { renderMainTable(); }
@@ -2268,7 +2301,9 @@ function toggleFilter(mode) {
 function clearFilters() {
   state.filterModes.clear();
   state.lineFilterSet.clear();
+  state.capaCellFilter = null;
   updateFilterButtons();
+  updateCapaCellFilterChip();
   renderMainTable();
 }
 
@@ -2961,6 +2996,42 @@ function getEffectiveCapaMap(groupKey) {
   return map;
 }
 
+// CAPA 요약표의 특정 라인·요일 칸에 해당하는 품목 목록 (line이 '__ANY__'면 그 그룹의 모든 라인을 합쳐서 반환)
+function getCapaCellFilterRows(groupKey, line, day) {
+  const lineMap = getEffectiveCapaMap(groupKey);
+  return (state.planRows || []).filter(r => {
+    const l = lineMap[r.key];
+    if (!l) return false;
+    if (line !== '__ANY__' && l !== line) return false;
+    return (r.dayQty[day] || 0) > 0;
+  });
+}
+// CAPA 요약표 셀에 마우스를 올렸을 때 보여줄 "품목코드: 수량" 목록(줄바꿈 구분)
+function capaCellTooltip(groupKey, line, day) {
+  const items = getCapaCellFilterRows(groupKey, line, day);
+  if (!items.length) return '';
+  return items.map(r => `${r.code}${r.color ? '_' + r.color : ''}: ${r.dayQty[day]}`).join('\n');
+}
+// CAPA 요약표 셀 클릭 → 메인 화면으로 이동해 해당 라인·요일에 생산 수량이 있는 품목만 필터링
+function applyCapaCellFilter(groupKey, line, day, label) {
+  const matches = getCapaCellFilterRows(groupKey, line, day);
+  if (!matches.length) { alert('해당 라인·요일에 생산 수량이 있는 품목이 없습니다.'); return; }
+  state.capaCellFilter = { groupKey, line, day, label };
+  closeCapaModal();
+  closeCapa4Modal();
+  goToMainTab();
+  updateCapaCellFilterChip();
+  renderMainTable();
+}
+// switchTab()은 전역 event.target에 의존해 onclick 체인 중간에서 호출하면 엉뚱한 요소가 active 처리되므로,
+// CAPA 셀 클릭처럼 다른 핸들러 안에서 메인 탭으로 옮길 때는 이 전용 함수를 사용
+function goToMainTab() {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[onclick*="switchTab('main')"]`)?.classList.add('active');
+  document.getElementById('page-main').classList.add('active');
+}
+
 // 일자별 저가/고가 라인 합계 + 전체 주간 목표생산량 합계(충수량) 계산
 function computeCapaSums() {
   const lineMap = getEffectiveCapaMap('floor2');
@@ -3010,7 +3081,12 @@ function renderCapaSummaryHtml() {
     const v = sums[line][d];
     const over = v > CAPA_THRESHOLDS[line];
     const cls = over ? (line === '저' ? 'capa-low-over' : 'capa-high-over') : '';
-    return `<td class="${cls}">${fmtNum(v)}</td>`;
+    const clickable = v > 0;
+    const tooltip = clickable ? capaCellTooltip('floor2', line, d) : '';
+    const attrs = clickable
+      ? `style="cursor:pointer;" title="${tooltip}" onclick="applyCapaCellFilter('floor2','${line}','${d}','${line === '저' ? '저가' : '고가'} 라인 ${d}요일')"`
+      : '';
+    return `<td class="${cls}" ${attrs}>${fmtNum(v)}</td>`;
   }).join('');
 
   return `
@@ -3068,7 +3144,12 @@ function renderCapa4SummaryHtml() {
   const days = ['월', '화', '수', '목', '금'];
   const sums = computeCapa4Sums();
   const weekSum = line => days.reduce((s, d) => s + sums[line][d], 0);
-  const rowHtml = line => `<tr><td>${line}</td>${days.map(d => `<td>${fmtNum(sums[line][d])}</td>`).join('')}<td>${fmtNum(weekSum(line))}</td></tr>`;
+  const dayTd = (groupKey, line, day, v, labelPrefix) => {
+    if (v <= 0) return `<td>${fmtNum(v)}</td>`;
+    const tooltip = capaCellTooltip(groupKey, line, day);
+    return `<td style="cursor:pointer;" title="${tooltip}" onclick="applyCapaCellFilter('${groupKey}','${line}','${day}','${labelPrefix} ${day}요일')">${fmtNum(v)}</td>`;
+  };
+  const rowHtml = line => `<tr><td>${line}</td>${days.map(d => dayTd('floor4', line, d, sums[line][d], line)).join('')}<td>${fmtNum(weekSum(line))}</td></tr>`;
   const dayTotal = d => sums.매트리스[d] + sums.모션[d] + sums.토퍼[d];
   const grandTotal = days.reduce((s, d) => s + dayTotal(d), 0);
   const glueSums = computeCapaGlueSums();
@@ -3081,8 +3162,8 @@ function renderCapa4SummaryHtml() {
         ${rowHtml('매트리스')}
         ${rowHtml('모션')}
         ${rowHtml('토퍼')}
-        <tr style="font-weight:700;"><td>합계</td>${days.map(d => `<td>${fmtNum(dayTotal(d))}</td>`).join('')}<td>${fmtNum(grandTotal)}</td></tr>
-        <tr style="border-top:2px solid var(--border2);"><td>접착품목<br><small style="font-weight:400;color:var(--text3);">(매트리스·토퍼 일부와 중복, 합계 미포함)</small></td>${days.map(d => `<td>${fmtNum(glueSums[d])}</td>`).join('')}<td>${fmtNum(glueWeekSum)}</td></tr>
+        <tr style="font-weight:700;"><td>합계</td>${days.map(d => dayTd('floor4', '__ANY__', d, dayTotal(d), '4층 전체')).join('')}<td>${fmtNum(grandTotal)}</td></tr>
+        <tr style="border-top:2px solid var(--border2);"><td>접착품목<br><small style="font-weight:400;color:var(--text3);">(매트리스·토퍼 일부와 중복, 합계 미포함)</small></td>${days.map(d => dayTd('glue', '접착', d, glueSums[d], '접착품목')).join('')}<td>${fmtNum(glueWeekSum)}</td></tr>
       </tbody>
     </table>
     <p style="margin-top:10px; font-size:11px; color:var(--text3);">※ 분류: ☆생산계획_작성용_파일_2026 시트 기준(매트리스/모션/토퍼, 접착품목). 매핑은 <strong>CAPA 매핑 관리</strong>에서 추가/삭제할 수 있습니다.</p>`;
